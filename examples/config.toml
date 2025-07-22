@@ -1,0 +1,22 @@
+[LOCAL-SERVER-1]
+endpoint = "http://192.168.1.100"
+ports = [8080, 8081]
+
+[LOCAL-SERVER-2]
+endpoint = "http://192.168.1.101"
+ports = [8080, 8081]
+
+[OpenRouter]
+endpoint = "https://openrouter.ai/api/v1"
+api_key = "<YOUR KEY HERE>"
+models = ["anthropic/claude-3.5-sonnet", "anthropic/claude-3-opus", "google/gemini-pro", "meta-llama/llama-3.1-405b"]
+
+[OpenAI]
+endpoint = "https://api.openai.com/v1"
+api_key = "<YOUR KEY HERE>"
+models = ["gpt-4", "gpt-4-turbo", "o1-preview"]
+
+[DeepSeek]
+endpoint = "https://api.deepseek.com/v1"
+api_key = "<YOUR KEY HERE>"
+models = ["deepseek-chat", "deepseek-coder"]
