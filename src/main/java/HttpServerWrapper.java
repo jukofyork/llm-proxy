@@ -5,6 +5,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -21,13 +23,13 @@ import com.sun.net.httpserver.HttpServer;
 public class HttpServerWrapper {
 
     private HttpServer httpServer;
+    private ExecutorService executor;
     private final int port;
 
     /**
      * Creates a new HTTP server wrapper.
      *
      * @param port The port to bind the server to
-     * @param backlog The maximum number of incoming connections to queue
      */
     public HttpServerWrapper(int port) {
         this.port = port;
@@ -43,7 +45,16 @@ public class HttpServerWrapper {
         try {
             httpServer = HttpServer.create(new InetSocketAddress(port), 0); // 0 = Use system default backlog
             httpServer.createContext("/", handler);
-            httpServer.setExecutor(null); // Use default executor
+            
+            // Create a thread pool for handling concurrent requests
+            executor = Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r);
+                t.setDaemon(true);
+                t.setName("HttpServer-Worker");
+                return t;
+            });
+            httpServer.setExecutor(executor);
+            
             httpServer.start();
         } catch (Exception e) {
             throw new IOException("Failed to start server on port " + port, e);
@@ -63,6 +74,11 @@ public class HttpServerWrapper {
             } catch (Exception e) {
                 throw new IOException("Failed to stop server", e);
             }
+        }
+        
+        if (executor != null) {
+            executor.shutdown();
+            executor = null;
         }
     }
 
@@ -119,10 +135,7 @@ public class HttpServerWrapper {
             exchange.sendResponseHeaders(200, 0); // 0 means chunked encoding
             
             try (OutputStream output = exchange.getResponseBody(); InputStream input = responseStream) {
-            	/*
-                input.transferTo(output); // TODO: THIS MAY NOT WORK DUE TO NOT FLUHSING, SO NEEDS THE LOOP:
-                */
-            	byte[] buffer = new byte[8192];
+                byte[] buffer = new byte[8192];
                 int bytesRead;
                 while ((bytesRead = input.read(buffer)) != -1) {
                     output.write(buffer, 0, bytesRead);
