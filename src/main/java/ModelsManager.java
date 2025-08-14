@@ -2,6 +2,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -22,6 +23,9 @@ public class ModelsManager {
     private static final Map<String, ModelConfig> registeredModels = new ConcurrentHashMap<>();
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static Map<String, ConfigurationManager.ServerConfig> configuredServers = new ConcurrentHashMap<>();
+
+    // Tracks the last time models were refreshed
+    private static Instant lastRefreshTime = Instant.EPOCH;
 
     /**
      * Private constructor to prevent instantiation of the class.
@@ -136,24 +140,30 @@ public class ModelsManager {
 
     /**
      * Refreshes the internally registered models by fetching updated models
-     * information from all configured servers in parallel.
+     * information from all configured servers in parallel, respecting a refresh TTL.
      */
     private static void refreshRegisteredModels() {
+        // Check if the last refresh was too recent
+        if (Instant.now().isBefore(lastRefreshTime.plus(Constants.MODEL_REFRESH_TTL))) {
+            Logger.info("Skipping model refresh due to TTL...");
+            return;
+        }
+
         Logger.info("Fetching models from configured servers...");
-    
+
         // Build models in a temporary map to avoid partial updates during concurrent access
         Map<String, ModelConfig> tempModels = new ConcurrentHashMap<>();
         HttpClientWrapper httpClient = new HttpClientWrapper(
                 Constants.MODEL_CONNECTION_TIMEOUT,
                 Constants.MODEL_REQUEST_TIMEOUT
         );
-    
+
         List<CompletableFuture<Void>> fetchTasks = new ArrayList<>();
-    
+
         for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : configuredServers.entrySet()) {
             String serverName = entry.getKey();
             ConfigurationManager.ServerConfig config = entry.getValue();
-    
+
             CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
                 try {
                     List<String> models = retrieveServerModels(httpClient, config.endpoint(), config.apiKey());
@@ -162,16 +172,16 @@ public class ModelsManager {
                     Map<String, ModelConfig> serverModels = buildServerModels(serverName, models, config);
                     // Merge into temp map
                     tempModels.putAll(serverModels);
-    
+
                     Logger.info("Server " + serverName + " provides " + models.size() + " models");
                 } catch (Exception e) {
                     Logger.warning("Failed to fetch models from " + serverName, e);
                 }
             });
-    
+
             fetchTasks.add(task);
         }
-    
+
         // Wait for all fetches to complete
         try {
             CompletableFuture
@@ -180,14 +190,15 @@ public class ModelsManager {
         } catch (Exception e) {
             Logger.warning("Some model fetches did not complete in time", e);
         }
-    
+
         // Atomically replace the registered models with the newly constructed snapshot
         registeredModels.clear();
         registeredModels.putAll(tempModels);
-    
+        lastRefreshTime = Instant.now();
+
         Logger.info("Proxy provides " + registeredModels.size() + " models: " + registeredModels.keySet());
     }
-    
+
     /**
      * Constructs a map of model names to ModelConfig objects for a given server.
      *
@@ -300,7 +311,7 @@ public class ModelsManager {
     /**
      * Validates if the request path is compatible with the model's endpoint.
      *
-     * @param requestPath  the incoming request path
+     * @param requestPath   the incoming request path
      * @param modelEndpoint the model's configured endpoint
      * @return true if valid, false otherwise
      */

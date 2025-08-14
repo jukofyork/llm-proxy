@@ -23,12 +23,13 @@ public final class Constants {
     // Model manager's timeout constants
     public static final Duration MODEL_CONNECTION_TIMEOUT = Duration.ofSeconds(2);
     public static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(5);
-    
+    public static final Duration MODEL_REFRESH_TTL = Duration.ofSeconds(60);
+
     // Timeout Constants
     // NOTE: The new o-series models can take ages to reply... 5 minutes response time should hopefully be enough.
     public static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(10);
     public static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(300);
-    
+
     // API Constants
     public static final String V1_PREFIX = "/v1";
     public static final String MODELS_ENDPOINT = "/models";
@@ -37,5 +38,5 @@ public final class Constants {
     public static final String HTTP_OK = "HTTP/1.1 200 OK\r\n";
     public static final String HTTP_BAD_REQUEST = "HTTP/1.1 400 Bad Request\r\n";
     public static final String CONTENT_TYPE_JSON = "Content-Type: application/json\r\n\r\n";
-    public static final String CONTENT_TYPE_STREAM = "Content-Type: text/event-stream\r\n\r\n";
+    public static final String CONTENT_TYPE_STREAM = "Content-Type: text/event-stream\r\n\r\n";   
 }
