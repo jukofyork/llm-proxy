@@ -14,9 +14,12 @@ import com.fasterxml.jackson.dataformat.toml.TomlFactory;
  */
 public class ConfigurationManager {
 
+    /**
+     * Holds relevant server configuration details.
+     */
     public record ServerConfig(String endpoint, String apiKey, List<String> allowedModels) {}
 
-    private static final Map<String, ServerConfig> serverConfigs = new HashMap<>();
+    private static final Map<String, ServerConfig> serverRegistry = new HashMap<>();
 
     /**
      * Private constructor to prevent instantiation of the class.
@@ -25,29 +28,29 @@ public class ConfigurationManager {
     }
 
     /**
-     * Initializes the configuration by loading TOML file.
-     * 
+     * Initializes the configuration by loading the TOML file.
+     *
      * @return true if initialization was successful, false otherwise
      */
     public static boolean initialize() {
-        return loadConfiguration();
+        return loadAllConfigurations();
     }
 
     /**
-     * Returns the server configurations mapping.
-     * 
-     * @return Map of server names to their configurations
+     * Returns an unmodifiable map of server names to their configurations.
+     *
+     * @return Map of server names to their ServerConfig objects
      */
     public static Map<String, ServerConfig> getServerConfigs() {
-        return Collections.unmodifiableMap(serverConfigs);
+        return Collections.unmodifiableMap(serverRegistry);
     }
 
     /**
-     * Loads server configuration from TOML file.
-     * 
+     * Loads all server configurations from the TOML file.
+     *
      * @return true if configuration loaded successfully, false otherwise
      */
-    private static boolean loadConfiguration() {
+    private static boolean loadAllConfigurations() {
         try {
             if (!Files.exists(Paths.get(Constants.CONFIG_FILE))) {
                 Logger.error("Configuration file not found: " + Constants.CONFIG_FILE);
@@ -58,9 +61,10 @@ public class ConfigurationManager {
             ObjectMapper tomlMapper = new ObjectMapper(new TomlFactory());
             JsonNode configRoot = tomlMapper.readTree(tomlContent);
 
-            configRoot.fields().forEachRemaining(entry -> 
-                processServerConfiguration(entry.getKey(), entry.getValue()));
-            
+            configRoot.fields().forEachRemaining(entry ->
+                parseServerConfiguration(entry.getKey(), entry.getValue())
+            );
+
             Logger.info("Configuration loaded successfully");
             return true;
         } catch (Exception e) {
@@ -70,28 +74,34 @@ public class ConfigurationManager {
     }
 
     /**
-     * Processes individual server configuration from TOML.
+     * Parses the server configuration for a single server name entry.
+     *
+     * @param serverName the logical name of the server
+     * @param serverNode the JSON node corresponding to that server's details
      */
-    private static void processServerConfiguration(String serverName, JsonNode serverNode) {
+    private static void parseServerConfiguration(String serverName, JsonNode serverNode) {
         String baseEndpoint = serverNode.get("endpoint").asText();
         String apiKey = serverNode.has("api_key") ? serverNode.get("api_key").asText() : null;
-        List<String> allowedModels = extractAllowedModels(serverNode);
+        List<String> allowedModels = parseAllowedModels(serverNode);
 
         if (serverNode.has("ports")) {
-            processMultiPortConfiguration(serverName, baseEndpoint, apiKey, allowedModels, serverNode.get("ports"));
+            parseMultiPortServers(serverName, baseEndpoint, apiKey, allowedModels, serverNode.get("ports"));
         } else {
-            addServerConfiguration(serverName, baseEndpoint, apiKey, allowedModels);
+            registerServer(serverName, baseEndpoint, apiKey, allowedModels);
         }
     }
 
     /**
-     * Extracts allowed models list from server configuration.
+     * Parses the allowed models from a server configuration node.
+     *
+     * @param serverNode the JSON node for the server configuration
+     * @return a list of allowed model names, or null if no models field is present
      */
-    private static List<String> extractAllowedModels(JsonNode serverNode) {
+    private static List<String> parseAllowedModels(JsonNode serverNode) {
         if (!serverNode.has("models")) {
             return null;
         }
-        
+
         List<String> models = new ArrayList<>();
         for (JsonNode modelNode : serverNode.get("models")) {
             models.add(modelNode.asText());
@@ -100,32 +110,53 @@ public class ConfigurationManager {
     }
 
     /**
-     * Processes configuration for servers with multiple ports.
+     * Parses server configurations for multiple port entries.
+     *
+     * @param serverName    the base name of the server
+     * @param baseEndpoint  the base endpoint URL
+     * @param apiKey        the API key for this server
+     * @param allowedModels an optional list of allowed models
+     * @param portsNode     the JSON node containing port numbers
      */
-    private static void processMultiPortConfiguration(String serverName, String baseEndpoint, 
-            String apiKey, List<String> allowedModels, JsonNode portsNode) {
+    private static void parseMultiPortServers(
+            String serverName,
+            String baseEndpoint,
+            String apiKey,
+            List<String> allowedModels,
+            JsonNode portsNode
+    ) {
         for (JsonNode portNode : portsNode) {
             int port = portNode.asInt();
-            String fullEndpoint = buildEndpointWithPort(baseEndpoint, port);
+            String fullEndpoint = constructEndpointWithPort(baseEndpoint, port);
             String configName = serverName + "-" + port;
-            addServerConfiguration(configName, fullEndpoint, apiKey, allowedModels);
+            registerServer(configName, fullEndpoint, apiKey, allowedModels);
         }
     }
 
     /**
-     * Adds a server configuration to the registry.
+     * Registers a single server configuration.
+     *
+     * @param name          the name of the server
+     * @param endpoint      the endpoint URL
+     * @param apiKey        the API key (if any)
+     * @param allowedModels an optional list of allowed models
      */
-    private static void addServerConfiguration(String name, String endpoint, String apiKey, List<String> allowedModels) {
-        serverConfigs.put(name, new ServerConfig(endpoint, apiKey, allowedModels));
-        String modelInfo = allowedModels != null ? 
-            " (filtered: " + allowedModels.size() + " models)" : " (all models)";
+    private static void registerServer(String name, String endpoint, String apiKey, List<String> allowedModels) {
+        serverRegistry.put(name, new ServerConfig(endpoint, apiKey, allowedModels));
+        String modelInfo = allowedModels != null
+                ? " (filtered: " + allowedModels.size() + " models)"
+                : " (all models)";
         Logger.info("Loaded server: " + name + " -> " + endpoint + modelInfo);
     }
 
     /**
-     * Builds endpoint URL with specified port.
+     * Constructs an endpoint URL with a specified port.
+     *
+     * @param endpoint the base endpoint URL
+     * @param port     the port to include
+     * @return a string representing the new endpoint URL with the specified port
      */
-    private static String buildEndpointWithPort(String endpoint, int port) {
+    private static String constructEndpointWithPort(String endpoint, int port) {
         try {
             URL url = new URL(endpoint);
             return new URL(url.getProtocol(), url.getHost(), port, url.getFile()).toString();
