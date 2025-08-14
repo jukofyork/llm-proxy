@@ -40,7 +40,6 @@ public class LlmProxy extends HttpProxy {
         proxy.start();
         
         Logger.info("Proxy server running on port " + Constants.PROXY_PORT);
-        Logger.info("Available models: " + ModelsManager.getModelBackends().keySet());
     }
 
     /**

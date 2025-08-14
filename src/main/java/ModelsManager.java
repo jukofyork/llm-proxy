@@ -38,15 +38,6 @@ public class ModelsManager {
 	}
 
 	/**
-	 * Returns the model backends mapping.
-	 * 
-	 * @return Map of model names to their configurations
-	 */
-	public static Map<String, ModelConfig> getModelBackends() {
-		return Collections.unmodifiableMap(modelBackends);
-	}
-
-	/**
 	 * Generates models response for /models endpoint by fetching fresh data from
 	 * all servers.
 	 * 
@@ -149,7 +140,7 @@ public class ModelsManager {
 			Logger.warning("Some model fetches did not complete in time", e);
 		}
 
-		Logger.info("Total models available: " + modelBackends.size());
+		Logger.info(modelBackends.size() + " models fooun: " + modelBackends.keySet());
 	}
 
 	/**
