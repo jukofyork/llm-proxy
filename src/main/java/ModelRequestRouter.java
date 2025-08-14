@@ -106,13 +106,19 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
         try {
             JsonNode requestJson = JSON_MAPPER.readTree(requestBody);
             
-            // Only proceed if we have an object node
             if (!requestJson.isObject()) {
                 return requestBody;
             }
             
             com.fasterxml.jackson.databind.node.ObjectNode objectNode = 
                 (com.fasterxml.jackson.databind.node.ObjectNode) requestJson;
+            
+            // If this is a virtual model, replace the model name with the base model name
+            String configName = ModelsManager.getConfigNameForModel(modelName);
+            String baseModelName = extractBaseModelName(modelName, serverConfig, configName);
+            if (!baseModelName.equals(modelName)) {
+                objectNode.put("model", baseModelName);
+            }
             
             // Apply disallowed parameter filtering first
             if (serverConfig.disallowedParams() != null) {
@@ -121,14 +127,14 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
                 }
             }
             
-            // Apply parameter overrides safely
-            if (serverConfig.params() != null && serverConfig.params().isObject()) {
+            // Apply effective parameters (base + virtual merged)
+            JsonNode paramsToApply = ModelsManager.getEffectiveParamsForModel(modelName);
+            if (paramsToApply != null && paramsToApply.isObject()) {
                 try {
                     objectNode = (com.fasterxml.jackson.databind.node.ObjectNode) 
-                        JSON_MAPPER.readerForUpdating(objectNode).readValue(serverConfig.params());
+                        JSON_MAPPER.readerForUpdating(objectNode).readValue(paramsToApply);
                 } catch (Exception e) {
                     Logger.warning("Failed to apply parameter overrides for model '" + modelName + "': " + e.getMessage());
-                    // Continue with original objectNode if override fails
                 }
             }
             
@@ -137,6 +143,32 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
             Logger.error("Failed to transform request body", e);
             return requestBody;
         }
+    }
+
+    /**
+     * Extracts the base model name from a potentially virtual model name.
+     *
+     * @param modelName the full model name (potentially virtual)
+     * @param serverConfig the server configuration
+     * @param configName the configuration name
+     * @return the base model name to send to the backend
+     */
+    private String extractBaseModelName(String modelName, ConfigurationManager.ServerConfig serverConfig, String configName) {
+        // If this is not a virtual endpoint, return original model name
+        if (serverConfig.virtualEndpointFor() == null || configName == null) {
+            return modelName;
+        }
+        
+        String baseServerName = serverConfig.virtualEndpointFor();
+        String virtualSuffix = configName.substring(baseServerName.length() + 1);
+        
+        // Remove the virtual suffix from the model name
+        if (modelName.endsWith("-" + virtualSuffix)) {
+            return modelName.substring(0, modelName.length() - virtualSuffix.length() - 1);
+        }
+        
+        // Fallback to original model name
+        return modelName;
     }
 
     /**

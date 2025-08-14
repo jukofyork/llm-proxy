@@ -17,7 +17,7 @@ public class ConfigurationManager {
     /**
      * Holds relevant server configuration details.
      */
-    public record ServerConfig(String endpoint, String apiKey, List<String> allowedModels, JsonNode params, List<String> allowedParams, List<String> disallowedParams) {}
+    public record ServerConfig(String endpoint, String apiKey, List<String> allowedModels, JsonNode params, List<String> allowedParams, List<String> disallowedParams, String virtualEndpointFor) {}
 
     private static final Map<String, ServerConfig> serverRegistry = new HashMap<>();
 
@@ -61,9 +61,13 @@ public class ConfigurationManager {
             ObjectMapper tomlMapper = new ObjectMapper(new TomlFactory());
             JsonNode configRoot = tomlMapper.readTree(tomlContent);
 
+            // First pass: load all configs
             configRoot.fields().forEachRemaining(entry ->
                 parseServerConfiguration(entry.getKey(), entry.getValue())
             );
+
+            // Second pass: detect virtual endpoints
+            detectVirtualEndpoints();
 
             Logger.info("Configuration loaded successfully");
             return true;
@@ -74,20 +78,69 @@ public class ConfigurationManager {
     }
 
     /**
+     * Detects and configures virtual endpoints based on naming patterns.
+     */
+    private static void detectVirtualEndpoints() {
+        List<String> baseServers = serverRegistry.entrySet().stream()
+            .filter(entry -> entry.getValue().endpoint() != null)
+            .map(Map.Entry::getKey)
+            .toList();
+
+        for (Map.Entry<String, ServerConfig> entry : serverRegistry.entrySet()) {
+            String configName = entry.getKey();
+            ServerConfig config = entry.getValue();
+
+            // Skip if already has endpoint (is a base server)
+            if (config.endpoint() != null) continue;
+
+            // Find longest matching base server
+            String baseServer = findLongestMatchingBaseServer(configName, baseServers);
+            if (baseServer != null) {
+                ConfigurationManager.ServerConfig baseConfig = serverRegistry.get(baseServer);
+                if (baseConfig == null || baseConfig.endpoint() == null) {
+                    Logger.warning("Virtual endpoint " + configName + " references non-existent base server: " + baseServer);
+                    continue;
+                }
+                // Update config to mark as virtual
+                ServerConfig updatedConfig = new ServerConfig(
+                    null, config.apiKey(), config.allowedModels(), config.params(),
+                    config.allowedParams(), config.disallowedParams(), baseServer
+                );
+                serverRegistry.put(configName, updatedConfig);
+                Logger.info("Detected virtual endpoint: " + configName + " -> " + baseServer);
+            }
+        }
+    }
+
+    /**
+     * Finds the longest matching base server name for a given config name.
+     *
+     * @param configName the name of the configuration
+     * @param baseServers list of base server names
+     * @return the longest matching base server name, or null if none found
+     */
+    private static String findLongestMatchingBaseServer(String configName, List<String> baseServers) {
+        return baseServers.stream()
+            .filter(base -> configName.startsWith(base + "-"))
+            .max(Comparator.comparing(String::length))
+            .orElse(null);
+    }
+
+    /**
      * Parses the server configuration for a single server name entry.
      *
      * @param serverName the logical name of the server
      * @param serverNode the JSON node corresponding to that server's details
      */
     private static void parseServerConfiguration(String serverName, JsonNode serverNode) {
-        String baseEndpoint = serverNode.get("endpoint").asText();
+        String baseEndpoint = serverNode.has("endpoint") ? serverNode.get("endpoint").asText() : null;
         String apiKey = serverNode.has("api_key") ? serverNode.get("api_key").asText() : null;
         List<String> allowedModels = parseAllowedModels(serverNode);
         JsonNode params = parseParamOverrides(serverNode);
         List<String> allowedParams = parseParamList(serverNode, "allowed_params");
         List<String> disallowedParams = parseParamList(serverNode, "disallowed_params");
 
-        if (serverNode.has("ports")) {
+        if (serverNode.has("ports") && baseEndpoint != null) {
             parseMultiPortServers(serverName, baseEndpoint, apiKey, allowedModels, serverNode.get("ports"), params, allowedParams, disallowedParams);
         } else {
             registerServer(serverName, baseEndpoint, apiKey, allowedModels, params, allowedParams, disallowedParams);
@@ -175,7 +228,7 @@ public class ConfigurationManager {
      * Registers a single server configuration.
      *
      * @param name             the name of the server
-     * @param endpoint         the endpoint URL
+     * @param endpoint         the endpoint URL (null for virtual endpoints)
      * @param apiKey           the API key (if any)
      * @param allowedModels    an optional list of allowed models
      * @param params           parameter overrides for this server
@@ -183,22 +236,25 @@ public class ConfigurationManager {
      * @param disallowedParams parameters to block (blacklist)
      */
     private static void registerServer(String name, String endpoint, String apiKey, List<String> allowedModels, JsonNode params, List<String> allowedParams, List<String> disallowedParams) {
-        serverRegistry.put(name, new ServerConfig(endpoint, apiKey, allowedModels, params, allowedParams, disallowedParams));
-        String modelInfo = allowedModels != null
-                ? " (filtered: " + allowedModels.size() + " models)"
-                : " (all models)";
-        int paramsCount = (params != null && params.isObject()) ? params.size() : 0;
-        String paramsInfo = paramsCount > 0 ? " (params: " + paramsCount + " overrides)" : "";
-        int allowedCount = allowedParams != null ? allowedParams.size() : 0;
-        int disallowedCount = disallowedParams != null ? disallowedParams.size() : 0;
-        String filterInfo = "";
-        if (allowedCount > 0) {
-            filterInfo += " (allow: " + allowedCount + " params)";
+        serverRegistry.put(name, new ServerConfig(endpoint, apiKey, allowedModels, params, allowedParams, disallowedParams, null));
+        
+        if (endpoint != null) {
+            String modelInfo = allowedModels != null
+                    ? " (filtered: " + allowedModels.size() + " models)"
+                    : " (all models)";
+            int paramsCount = (params != null && params.isObject()) ? params.size() : 0;
+            String paramsInfo = paramsCount > 0 ? " (params: " + paramsCount + " overrides)" : "";
+            int allowedCount = allowedParams != null ? allowedParams.size() : 0;
+            int disallowedCount = disallowedParams != null ? disallowedParams.size() : 0;
+            String filterInfo = "";
+            if (allowedCount > 0) {
+                filterInfo += " (allow: " + allowedCount + " params)";
+            }
+            if (disallowedCount > 0) {
+                filterInfo += " (block: " + disallowedCount + " params)";
+            }
+            Logger.info("Loaded server: " + name + " -> " + endpoint + modelInfo + paramsInfo + filterInfo);
         }
-        if (disallowedCount > 0) {
-            filterInfo += " (block: " + disallowedCount + " params)";
-        }
-        Logger.info("Loaded server: " + name + " -> " + endpoint + modelInfo + paramsInfo + filterInfo);
     }
 
     /**

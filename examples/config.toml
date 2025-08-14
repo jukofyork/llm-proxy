@@ -1,124 +1,93 @@
-# Example configuration showcasing different server types and parameter features
+# Example configuration showcasing virtual endpoints and parameter overrides
 
 # ============================================================================
-# LOCAL SERVERS - Multi-port with shared configuration
+# CLOUD PROVIDERS WITH VIRTUAL ENDPOINTS
 # ============================================================================
-
-[LOCAL-SERVER-1]
-endpoint = "http://192.168.1.100"
-ports = [8080, 8081]
-# Block temperature parameter for all models on this server
-disallowed_params = ["temperature"]
-# Force streaming and set default temperature
-params = { stream = true, temperature = 0.7 }
-
-[LOCAL-SERVER-2]
-endpoint = "http://192.168.1.101"
-ports = [8080, 8081]
-# Only allow specific parameters through
-allowed_params = ["max_tokens", "top_p", "stream"]
-# Override default parameters
-params = { max_tokens = 2048, top_p = 0.9 }
-
-# ============================================================================
-# INDIVIDUAL PORT CONFIGURATIONS - Different settings per port
-# ============================================================================
-
-[LLAMA-SERVER-FAST]
-endpoint = "http://192.168.1.102:8080"
-# Fast inference settings
-params = { temperature = 0.3, max_tokens = 1024, top_p = 0.8 }
-disallowed_params = ["top_k", "repetition_penalty"]
-
-[LLAMA-SERVER-QUALITY]
-endpoint = "http://192.168.1.102:8081"
-# Quality inference settings
-params = { temperature = 0.8, max_tokens = 4096, top_p = 0.95 }
-disallowed_params = ["top_k", "repetition_penalty"]
-
-# ============================================================================
-# CLOUD PROVIDERS - With API keys and model filtering
-# ============================================================================
-
-[OpenRouter]
-endpoint = "https://openrouter.ai/api/v1"
-api_key = "<YOUR KEY HERE>"
-# Limit to specific high-quality models
-models = ["anthropic/claude-3.5-sonnet", "anthropic/claude-3-opus", "google/gemini-pro", "meta-llama/llama-3.1-405b"]
-# Remove cost-affecting parameters
-disallowed_params = ["max_tokens"]
-# Set reasonable defaults
-params = { temperature = 0.7, top_p = 0.9 }
 
 [OpenAI]
 endpoint = "https://api.openai.com/v1"
-api_key = "<YOUR KEY HERE>"
-models = ["gpt-4", "gpt-4-turbo", "o1-preview"]
-# o1 models don't support temperature
+api_key = "sk-proj-..."
+models = ["gpt-4", "o1-preview"]
+# Base parameters inherited by all virtual endpoints
+params = { stream = true, stream_options = { include_usage = true } }
 disallowed_params = ["temperature"]
-# Enable usage tracking with nested parameters
-params = { stream = true, reasoning_effort = "high", stream_options = { include_usage = true } }
 
-[DeepSeek]
-endpoint = "https://api.deepseek.com/v1"
-api_key = "<YOUR KEY HERE>"
-models = ["deepseek-chat", "deepseek-coder"]
-# Force specific settings for consistency
-params = { temperature = 0.7, max_tokens = 8192, stream = true }
+# Virtual endpoints inherit base params and add/override specific ones
+[OpenAI-high-reasoning]
+params = { reasoning_effort = "high" }
+
+[OpenAI-medium-reasoning]
+params = { reasoning_effort = "medium" }
+
+[OpenAI-fast]
+params = { reasoning_effort = "low", stream = false }  # Overrides base stream=true
+
+[Anthropic]
+endpoint = "https://api.anthropic.com/v1"
+api_key = "sk-ant-..."
+models = ["claude-3-5-sonnet-20241022"]
+# Base parameters for consistent behavior
+params = { max_tokens = 4096, stream = true }
+
+# Virtual endpoints for different creativity levels
+[Anthropic-creative]
+params = { temperature = 0.9, top_p = 0.95 }  # Inherits max_tokens and stream
+
+[Anthropic-precise]
+params = { temperature = 0.1, top_p = 0.8, max_tokens = 2048 }  # Overrides max_tokens
+
+# ============================================================================
+# LOCAL SERVERS WITH VIRTUAL CONFIGURATIONS
+# ============================================================================
+
+[LocalLLM]
+endpoint = "http://192.168.1.100:8080"
+# Base settings for all virtual endpoints
+params = { stream = true, top_p = 0.9 }
+
+# Virtual endpoints for different use cases
+[LocalLLM-coding]
+params = { temperature = 0.2, max_tokens = 8192 }  # Inherits stream and top_p
+disallowed_params = ["top_k", "repetition_penalty"]
+
+[LocalLLM-creative]
+params = { temperature = 0.8, max_tokens = 4096, top_p = 0.95 }  # Overrides top_p
+
+[LocalLLM-chat]
+params = { temperature = 0.7, max_tokens = 2048 }  # Inherits stream and top_p
+
+# ============================================================================
+# MULTI-PORT SERVERS WITH VIRTUAL VARIANTS
+# ============================================================================
+
+[GPU-Cluster]
+endpoint = "http://192.168.1.200"
+ports = [8080, 8081, 8082]
+# Base parameters inherited by virtual endpoints
+params = { temperature = 0.7, stream = true }
+
+# Virtual endpoints apply to all ports and inherit base params
+[GPU-Cluster-fast]
+params = { temperature = 0.3, max_tokens = 1024 }  # Inherits stream=true
+
+[GPU-Cluster-quality]
+params = { temperature = 0.8, max_tokens = 4096 }  # Inherits stream=true
 
 # ============================================================================
 # SPECIALIZED CONFIGURATIONS
 # ============================================================================
 
-[Anthropic-Creative]
-endpoint = "https://api.anthropic.com/v1"
-api_key = "<YOUR KEY HERE>"
-models = ["claude-3-5-sonnet-20241022"]
-# High creativity settings
-params = { temperature = 0.9, max_tokens = 4096, top_p = 0.95 }
-# Block parameters that reduce creativity
-disallowed_params = ["top_k"]
+[OpenRouter]
+endpoint = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+models = ["anthropic/claude-3.5-sonnet", "meta-llama/llama-3.1-405b"]
+params = { temperature = 0.7, stream = true }
 
-[Anthropic-Precise]
-endpoint = "https://api.anthropic.com/v1"
-api_key = "<YOUR KEY HERE>"
-models = ["claude-3-5-sonnet-20241022"]
-# Low temperature for precise responses
-params = { temperature = 0.1, max_tokens = 2048, top_p = 0.8 }
+[OpenRouter-cost-optimized]
+params = { max_tokens = 1024, temperature = 0.5, stream = false }  # Overrides stream
+disallowed_params = ["top_p", "top_k"]
 
 [Local-Uncensored]
 endpoint = "http://192.168.1.103:8080"
-# No parameter restrictions - pass everything through
-# (no disallowed_params or allowed_params means no filtering)
-params = { temperature = 0.8, repeat_penalty = 1.1, top_k = 40 }
-
-# ============================================================================
-# LOAD BALANCING EXAMPLE
-# ============================================================================
-
-[GPU-CLUSTER-NODE-1]
-endpoint = "http://192.168.1.200:8080"
-params = { temperature = 0.7, max_tokens = 4096 }
-
-[GPU-CLUSTER-NODE-2]
-endpoint = "http://192.168.1.201:8080"
-params = { temperature = 0.7, max_tokens = 4096 }
-
-[GPU-CLUSTER-NODE-3]
-endpoint = "http://192.168.1.202:8080"
-params = { temperature = 0.7, max_tokens = 4096 }
-
-# ============================================================================
-# DEVELOPMENT/TESTING
-# ============================================================================
-
-[Local-Debug]
-endpoint = "http://localhost:8080"
-# Allow all parameters for testing
-params = { stream = false, temperature = 0.5 }
-# No filtering - useful for development
-
-[Mock-Server]
-endpoint = "http://localhost:3000"
-# Override all requests to use mock responses
-params = { mock = true, response_delay = 100 }
+# No restrictions - useful for testing
+params = { temperature = 0.8, stream = false }

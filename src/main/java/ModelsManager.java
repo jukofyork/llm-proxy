@@ -83,14 +83,106 @@ public class ModelsManager {
      * @return the ServerConfig for this model, or null if not found
      */
     public static ConfigurationManager.ServerConfig getServerConfigForModel(String modelName) {
+        // Try virtual model lookup first
+        ConfigurationManager.ServerConfig virtualConfig = getVirtualServerConfigForModel(modelName);
+        if (virtualConfig != null) return virtualConfig;
+
+        // Fall back to direct lookup for base models
+        return getDirectServerConfigForModel(modelName);
+    }
+
+    /**
+     * Gets the effective parameters for a model, merging base and virtual parameters.
+     *
+     * @param modelName the model name
+     * @return merged parameters, or null if no config found
+     */
+    public static JsonNode getEffectiveParamsForModel(String modelName) {
+        ConfigurationManager.ServerConfig serverConfig = getServerConfigForModel(modelName);
+        if (serverConfig == null) return null;
+
+        // If not a virtual endpoint, just return its params
+        if (serverConfig.virtualEndpointFor() == null) {
+            return serverConfig.params();
+        }
+
+        // Get base config params for virtual endpoints
+        ConfigurationManager.ServerConfig baseConfig = getDirectServerConfigForModel(modelName);
+        JsonNode baseParams = baseConfig != null ? baseConfig.params() : null;
+        JsonNode virtualParams = serverConfig.params();
+
+        // Merge base params with virtual params (virtual overrides base)
+        if (baseParams == null) return virtualParams;
+        if (virtualParams == null) return baseParams;
+
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode merged = baseParams.deepCopy();
+            return JSON_MAPPER.readerForUpdating(merged).readValue(virtualParams);
+        } catch (Exception e) {
+            Logger.warning("Failed to merge base and virtual params: " + e.getMessage());
+            return virtualParams; // Fallback to just virtual params
+        }
+    }
+
+    /**
+     * Gets the server configuration for a model by direct lookup.
+     *
+     * @param modelName the model name
+     * @return the ServerConfig for this model, or null if not found
+     */
+    private static ConfigurationManager.ServerConfig getDirectServerConfigForModel(String modelName) {
         ModelConfig modelConfig = registeredModels.get(modelName);
         if (modelConfig == null) {
             return null;
         }
 
         for (ConfigurationManager.ServerConfig serverConfig : configuredServers.values()) {
-            if (serverConfig.endpoint().equals(modelConfig.endpoint())) {
+            if (serverConfig.endpoint() != null && serverConfig.endpoint().equals(modelConfig.endpoint())) {
                 return serverConfig;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gets the server configuration for a virtual model.
+     *
+     * @param modelName the model name
+     * @return the virtual ServerConfig for this model, or null if not found
+     */
+    private static ConfigurationManager.ServerConfig getVirtualServerConfigForModel(String modelName) {
+        for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : configuredServers.entrySet()) {
+            String configName = entry.getKey();
+            ConfigurationManager.ServerConfig config = entry.getValue();
+
+            if (config.virtualEndpointFor() == null) continue;
+
+            String baseServerName = config.virtualEndpointFor();
+            String virtualSuffix = configName.substring(baseServerName.length() + 1);
+
+            if (modelName.endsWith("-" + virtualSuffix)) {
+                return config;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Gets the configuration name for a specific model.
+     *
+     * @param modelName the model name
+     * @return the configuration name for this model, or null if not found
+     */
+    public static String getConfigNameForModel(String modelName) {
+        for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : configuredServers.entrySet()) {
+            String configName = entry.getKey();
+            ConfigurationManager.ServerConfig config = entry.getValue();
+            
+            if (config.virtualEndpointFor() != null) {
+                String virtualSuffix = configName.substring(config.virtualEndpointFor().length() + 1);
+                if (modelName.endsWith("-" + virtualSuffix)) {
+                    return configName;
+                }
             }
         }
         return null;
@@ -150,6 +242,9 @@ public class ModelsManager {
             String serverName = entry.getKey();
             ConfigurationManager.ServerConfig config = entry.getValue();
 
+            // Skip virtual endpoints - they don't have their own models
+            if (config.endpoint() == null) continue;
+
             CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
                 try {
                     List<String> models = retrieveServerModels(httpClient, config.endpoint(), config.apiKey());
@@ -177,12 +272,57 @@ public class ModelsManager {
             Logger.warning("Some model fetches did not complete in time", e);
         }
 
+        // After fetching base models, register virtual models
+        registerVirtualModels(tempModels);
+
         // Atomically replace the registered models with the newly constructed snapshot
         registeredModels.clear();
         registeredModels.putAll(tempModels);
         lastRefreshTime = Instant.now();
 
         Logger.info("Proxy provides " + registeredModels.size() + " models: " + registeredModels.keySet());
+    }
+
+    /**
+     * Registers virtual models based on virtual endpoint configurations.
+     *
+     * @param tempModels the temporary models map to add virtual models to
+     */
+    private static void registerVirtualModels(Map<String, ModelConfig> tempModels) {
+        // First, identify all base models (before any virtual models are added)
+        Set<String> baseModels = new HashSet<>(tempModels.keySet());
+        
+        for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : configuredServers.entrySet()) {
+            String configName = entry.getKey();
+            ConfigurationManager.ServerConfig config = entry.getValue();
+
+            // Skip non-virtual endpoints
+            if (config.virtualEndpointFor() == null) continue;
+
+            String baseServerName = config.virtualEndpointFor();
+            String virtualSuffix = configName.substring(baseServerName.length() + 1);
+
+            // Find base server's models and create virtual variants
+            ConfigurationManager.ServerConfig baseConfig = configuredServers.get(baseServerName);
+            if (baseConfig == null || baseConfig.endpoint() == null) continue;
+
+            // Get ONLY base models (not previously created virtual models)
+            List<String> serverBaseModels = baseModels.stream()
+                .filter(modelName -> {
+                    ModelConfig modelConfig = tempModels.get(modelName);
+                    return modelConfig.endpoint().equals(baseConfig.endpoint());
+                })
+                .toList();
+
+            // Register virtual models
+            for (String baseModel : serverBaseModels) {
+                String virtualModel = baseModel + "-" + virtualSuffix;
+                ModelConfig baseModelConfig = tempModels.get(baseModel);
+                tempModels.put(virtualModel, baseModelConfig);
+            }
+
+            Logger.info("Registered " + serverBaseModels.size() + " virtual models for " + configName);
+        }
     }
 
     /**
