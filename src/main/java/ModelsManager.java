@@ -67,61 +67,47 @@ public class ModelsManager {
     }
 
     /**
-     * Finds the appropriate model configuration for the request, based on model name
-     * extracted from the request. If the model is not found or the endpoint is
-     * invalid, returns null.
+     * Gets the model configuration for a specific model name.
      *
-     * @param method  the HTTP method
-     * @param path    the requested path
-     * @param body    the request body
-     * @param headers the request headers
-     * @return a ModelConfig matching the request, or null if not found
+     * @param modelName the model name
+     * @return a ModelConfig for the model, or null if not found
      */
-    public static ModelConfig findModelConfigForRequest(String method, String path, String body,
-            Map<String, String> headers) {
-        String modelName = extractRequestedModelName(path, body, headers);
-        if (modelName == null) {
-            return null;
-        }
-
-        ModelConfig config = registeredModels.get(modelName);
-        if (config == null) {
-            Logger.warning("Model '" + modelName + "' not found");
-            return null;
-        }
-
-        if (!validateModelEndpoint(path, config.endpoint())) {
-            Logger.warning("Model '" + modelName + "' endpoint mismatch");
-            return null;
-        }
-
-        return config;
+    public static ModelConfig getModelConfig(String modelName) {
+        return registeredModels.get(modelName);
     }
 
     /**
-     * Determines if the request expects a streaming response by checking the "stream"
-     * field in the JSON body. If "stream" is set to false, then streaming is
-     * disabled.
+     * Gets the server configuration for a specific model.
      *
-     * @param body the request body
-     * @return true if request should stream responses, false otherwise
+     * @param modelName the model name
+     * @return the ServerConfig for this model, or null if not found
      */
-    public static boolean determineIfStreamingRequest(String body) {
-        try {
-            if (body == null || body.isEmpty()) {
-                return true;  // Default if no body
-            }
-            JsonNode root = JSON_MAPPER.readTree(body);
-            JsonNode streamNode = root.get("stream");
-            // If "stream" is explicitly false, disable streaming; otherwise enable it
-            if (streamNode != null && streamNode.isBoolean() && !streamNode.asBoolean()) {
-                return false;
-            }
-            return true;
-        } catch (Exception e) {
-            // If JSON is invalid, default to streaming
-            return true;
+    public static ConfigurationManager.ServerConfig getServerConfigForModel(String modelName) {
+        ModelConfig modelConfig = registeredModels.get(modelName);
+        if (modelConfig == null) {
+            return null;
         }
+
+        for (ConfigurationManager.ServerConfig serverConfig : configuredServers.values()) {
+            if (serverConfig.endpoint().equals(modelConfig.endpoint())) {
+                return serverConfig;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Validates if the request path is compatible with the model's endpoint.
+     *
+     * @param requestPath   the incoming request path
+     * @param modelEndpoint the model's configured endpoint
+     * @return true if valid, false otherwise
+     */
+    public static boolean validateModelEndpoint(String requestPath, String modelEndpoint) {
+        if (!requestPath.startsWith(Constants.V1_PREFIX) && modelEndpoint.endsWith(Constants.V1_PREFIX)) {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -279,46 +265,5 @@ public class ModelsManager {
             return models;
         }
         return models.stream().filter(allowedModels::contains).toList();
-    }
-
-    /**
-     * Extracts the model name from the request based on endpoint type. For standard
-     * OpenAI-style calls, reads "model" from the JSON body. For llama.cpp-compatibility,
-     * falls back to the Authorization header containing a Bearer token matching the
-     * model name.
-     *
-     * @param path    the request path
-     * @param body    the request body
-     * @param headers the HTTP request headers
-     * @return the requested model name, or null if unavailable
-     */
-    private static String extractRequestedModelName(String path, String body, Map<String, String> headers) {
-        if (path.startsWith(Constants.V1_PREFIX)) {
-            try {
-                JsonNode root = JSON_MAPPER.readTree(body);
-                return root.has("model") ? root.get("model").asText() : null;
-            } catch (Exception e) {
-                Logger.error("Invalid JSON in request body");
-                return null;
-            }
-        }
-
-        // To allow passing model name via llama.cpp API, fallback to extracting from key
-        String authHeader = headers.get("authorization");
-        return authHeader != null ? authHeader.replace("Bearer ", "") : null;
-    }
-
-    /**
-     * Validates if the request path is compatible with the model's endpoint.
-     *
-     * @param requestPath   the incoming request path
-     * @param modelEndpoint the model's configured endpoint
-     * @return true if valid, false otherwise
-     */
-    private static boolean validateModelEndpoint(String requestPath, String modelEndpoint) {
-        if (!requestPath.startsWith(Constants.V1_PREFIX) && modelEndpoint.endsWith(Constants.V1_PREFIX)) {
-            return false;
-        }
-        return true;
     }
 }

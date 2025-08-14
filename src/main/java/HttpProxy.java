@@ -34,7 +34,7 @@ public class HttpProxy implements HttpHandler {
     /**
      * Target information for proxying a request.
      */
-    public record ProxyTarget(URI uri, String apiKey, boolean isStreaming) {}
+    public record ProxyTarget(URI uri, String apiKey, boolean isStreaming, String body) {}
 
     private final HttpServerWrapper serverWrapper;
     private final HttpClientWrapper clientWrapper;
@@ -83,16 +83,16 @@ public class HttpProxy implements HttpHandler {
             String path = exchange.getRequestURI().getPath();
             String body = HttpServerWrapper.readRequestBody(exchange);
             Map<String, String> headers = convertHeaders(exchange);
-
+    
             ProxyTarget target = router.route(method, path, body, headers);
             if (target == null) {
                 HttpServerWrapper.sendResponse(exchange, 400, "application/json", 
                     "{\"error\":{\"message\":\"Bad Request\",\"type\":\"invalid_request_error\"}}");
                 return;
             }
-
-            proxyRequest(exchange, target, body);
-
+    
+            proxyRequest(exchange, target, target.body() != null ? target.body() : body);
+    
         } catch (Exception e) {
             HttpServerWrapper.sendResponse(exchange, 500, "application/json",
                 "{\"error\":{\"message\":\"Internal Server Error\",\"type\":\"server_error\"}}");
@@ -103,6 +103,7 @@ public class HttpProxy implements HttpHandler {
      * Proxies the request to the target backend server.
      */
     private void proxyRequest(HttpExchange exchange, ProxyTarget target, String body) throws IOException {
+    	Logger.info("Actually sending to backend: " + body);
         HttpResponse<InputStream> response = clientWrapper.sendRequest(
             target.uri(), 
             target.apiKey(), 
