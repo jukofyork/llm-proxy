@@ -20,10 +20,9 @@ public final class Constants {
     public static final String CONFIG_FILE = "config.toml";
     public static final String LOG_FILE = "simple-proxy.log";
     
-    // Model manager's cache refresh interval
-    public static final Duration MODEL_REFRESH_INTERVAL = Duration.ofSeconds(60);
-    public static final Duration MODEL_CONNECTION_TIMEOUT = Duration.ofSeconds(5);
-    public static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(10);
+    // Model manager's timeout constants
+    public static final Duration MODEL_CONNECTION_TIMEOUT = Duration.ofSeconds(2);
+    public static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(5);
     
     // Timeout Constants
     // NOTE: The new o-series models can take ages to reply... 5 minutes response time should hopefully be enough.
