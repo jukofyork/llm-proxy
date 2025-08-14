@@ -103,7 +103,12 @@ public class HttpProxy implements HttpHandler {
      * Proxies the request to the target backend server.
      */
     private void proxyRequest(HttpExchange exchange, ProxyTarget target, String body) throws IOException {
-        HttpResponse<InputStream> response = clientWrapper.sendRequest(target.uri(), target.apiKey(), body, target.isStreaming());
+        HttpResponse<InputStream> response = clientWrapper.sendRequest(
+            target.uri(), 
+            target.apiKey(), 
+            body, 
+            target.isStreaming()
+        );
         
         if (target.isStreaming()) {
             HttpServerWrapper.sendStreamingResponse(exchange, response.body());
@@ -111,7 +116,13 @@ public class HttpProxy implements HttpHandler {
             // Read the entire response body for non-streaming
             try (InputStream responseStream = response.body()) {
                 String responseBody = new String(responseStream.readAllBytes());
-                HttpServerWrapper.sendResponse(exchange, response.statusCode(), "application/json", responseBody);
+                
+                // Forward the backend content type if present, default to application/json
+                String contentType = response.headers()
+                    .firstValue("content-type")
+                    .orElse("application/json");
+                
+                HttpServerWrapper.sendResponse(exchange, response.statusCode(), contentType, responseBody);
             }
         }
     }

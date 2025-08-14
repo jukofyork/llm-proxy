@@ -103,7 +103,21 @@ public class ModelsManager {
      * @return true if request should stream responses, false otherwise
      */
     public static boolean determineIfStreamingRequest(String body) {
-        return !body.matches(".*\"stream\"\\s*:\\s*false.*");
+        try {
+            if (body == null || body.isEmpty()) {
+                return true;  // Default if no body
+            }
+            JsonNode root = JSON_MAPPER.readTree(body);
+            JsonNode streamNode = root.get("stream");
+            // If "stream" is explicitly false, disable streaming; otherwise enable it
+            if (streamNode != null && streamNode.isBoolean() && !streamNode.asBoolean()) {
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            // If JSON is invalid, default to streaming
+            return true;
+        }
     }
 
     /**
@@ -126,33 +140,38 @@ public class ModelsManager {
      */
     private static void refreshRegisteredModels() {
         Logger.info("Fetching models from configured servers...");
-
-        registeredModels.clear();
+    
+        // Build models in a temporary map to avoid partial updates during concurrent access
+        Map<String, ModelConfig> tempModels = new ConcurrentHashMap<>();
         HttpClientWrapper httpClient = new HttpClientWrapper(
                 Constants.MODEL_CONNECTION_TIMEOUT,
                 Constants.MODEL_REQUEST_TIMEOUT
         );
-
+    
         List<CompletableFuture<Void>> fetchTasks = new ArrayList<>();
-
+    
         for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : configuredServers.entrySet()) {
             String serverName = entry.getKey();
             ConfigurationManager.ServerConfig config = entry.getValue();
-
+    
             CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
                 try {
                     List<String> models = retrieveServerModels(httpClient, config.endpoint(), config.apiKey());
                     models = filterAllowedModels(models, config.allowedModels());
-                    addServerModelsToRegistry(serverName, models, config);
+                    // Build server-specific map
+                    Map<String, ModelConfig> serverModels = buildServerModels(serverName, models, config);
+                    // Merge into temp map
+                    tempModels.putAll(serverModels);
+    
                     Logger.info("Server " + serverName + " provides " + models.size() + " models");
                 } catch (Exception e) {
                     Logger.warning("Failed to fetch models from " + serverName, e);
                 }
             });
-
+    
             fetchTasks.add(task);
         }
-
+    
         // Wait for all fetches to complete
         try {
             CompletableFuture
@@ -161,23 +180,29 @@ public class ModelsManager {
         } catch (Exception e) {
             Logger.warning("Some model fetches did not complete in time", e);
         }
-
+    
+        // Atomically replace the registered models with the newly constructed snapshot
+        registeredModels.clear();
+        registeredModels.putAll(tempModels);
+    
         Logger.info("Proxy provides " + registeredModels.size() + " models: " + registeredModels.keySet());
     }
-
+    
     /**
-     * Associates the given list of models from the specified server into the global
-     * registry.
+     * Constructs a map of model names to ModelConfig objects for a given server.
      *
      * @param serverName the name of the server
      * @param models     the list of model IDs
      * @param config     the server configuration containing endpoint and apiKey
+     * @return a map of modelName -> ModelConfig
      */
-    private static void addServerModelsToRegistry(String serverName, List<String> models,
+    private static Map<String, ModelConfig> buildServerModels(String serverName, List<String> models,
             ConfigurationManager.ServerConfig config) {
+        Map<String, ModelConfig> serverModels = new HashMap<>();
         for (String modelName : models) {
-            registeredModels.put(modelName, new ModelConfig(config.endpoint(), modelName, config.apiKey()));
+            serverModels.put(modelName, new ModelConfig(config.endpoint(), modelName, config.apiKey()));
         }
+        return serverModels;
     }
 
     /**
