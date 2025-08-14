@@ -13,221 +13,276 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class ModelsManager {
 
-	public record ModelConfig(String endpoint, String displayName, String apiKey) {
-	}
+    /**
+     * Holds essential model configuration details.
+     */
+    public record ModelConfig(String endpoint, String displayName, String apiKey) {
+    }
 
-	private static final Map<String, ModelConfig> modelBackends = new ConcurrentHashMap<>();
-	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
-	private static Map<String, ConfigurationManager.ServerConfig> serverConfigs = new ConcurrentHashMap<>();
+    private static final Map<String, ModelConfig> registeredModels = new ConcurrentHashMap<>();
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+    private static Map<String, ConfigurationManager.ServerConfig> configuredServers = new ConcurrentHashMap<>();
 
-	/**
-	 * Private constructor to prevent instantiation of the class.
-	 */
-	private ModelsManager() {
-	}
+    /**
+     * Private constructor to prevent instantiation of the class.
+     */
+    private ModelsManager() {
+    }
 
-	/**
-	 * Initializes the ModelsManager with server configurations.
-	 * 
-	 * @param configs Map of server configurations from ConfigurationManager
-	 * @return true if initialization was successful, false otherwise
-	 */
-	public static boolean initialize(Map<String, ConfigurationManager.ServerConfig> configs) {
-		serverConfigs = new ConcurrentHashMap<>(configs);
-		return true;
-	}
+    /**
+     * Initializes the ModelsManager with the given server configurations.
+     *
+     * @param configs Map of server configurations from ConfigurationManager
+     * @return true if initialization was successful, false otherwise
+     */
+    public static boolean initialize(Map<String, ConfigurationManager.ServerConfig> configs) {
+        configuredServers = new ConcurrentHashMap<>(configs);
+        return true;
+    }
 
-	/**
-	 * Generates models response for /models endpoint by fetching fresh data from
-	 * all servers.
-	 * 
-	 * @return JSON string containing all available models
-	 */
-	public static String generateModelsResponse() {
-		fetchAllAvailableModels();
+    /**
+     * Generates models response for /models endpoint by fetching fresh data from
+     * all servers, then returns a JSON string listing all available models.
+     *
+     * @return JSON string containing all available models
+     */
+    public static String generateModelsResponse() {
+        refreshRegisteredModels();
 
-		try {
-			List<Map<String, String>> models = modelBackends.keySet().stream()
-					.map(modelId -> Map.of("id", modelId, "object", "model")).toList();
+        try {
+            List<Map<String, String>> models = registeredModels.keySet().stream()
+                    .map(modelId -> Map.of("id", modelId, "object", "model"))
+                    .toList();
 
-			Map<String, Object> response = Map.of("object", "list", "data", models);
-			return JSON_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(response);
-		} catch (Exception e) {
-			Logger.error("Failed to generate models response", e);
-			return "{\"object\":\"list\",\"data\":[]}";
-		}
-	}
+            Map<String, Object> response = Map.of("object", "list", "data", models);
+            return JSON_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(response);
+        } catch (Exception e) {
+            Logger.error("Failed to generate models response", e);
+            return "{\"object\":\"list\",\"data\":[]}";
+        }
+    }
 
-	/**
-	 * Finds appropriate model configuration for the request.
-	 */
-	public static ModelConfig findModelConfigForRequest(String method, String path, String body,
-			Map<String, String> headers) {
-		String modelName = extractModelNameFromRequest(path, body, headers);
-		if (modelName == null) {
-			return null;
-		}
+    /**
+     * Finds the appropriate model configuration for the request, based on model name
+     * extracted from the request. If the model is not found or the endpoint is
+     * invalid, returns null.
+     *
+     * @param method  the HTTP method
+     * @param path    the requested path
+     * @param body    the request body
+     * @param headers the request headers
+     * @return a ModelConfig matching the request, or null if not found
+     */
+    public static ModelConfig findModelConfigForRequest(String method, String path, String body,
+            Map<String, String> headers) {
+        String modelName = extractRequestedModelName(path, body, headers);
+        if (modelName == null) {
+            return null;
+        }
 
-		ModelConfig config = modelBackends.get(modelName);
-		if (config == null) {
-			Logger.warning("Model '" + modelName + "' not found");
-			return null;
-		}
+        ModelConfig config = registeredModels.get(modelName);
+        if (config == null) {
+            Logger.warning("Model '" + modelName + "' not found");
+            return null;
+        }
 
-		if (!isValidEndpointForModel(path, config.endpoint())) {
-			Logger.warning("Model '" + modelName + "' endpoint mismatch");
-			return null;
-		}
+        if (!validateModelEndpoint(path, config.endpoint())) {
+            Logger.warning("Model '" + modelName + "' endpoint mismatch");
+            return null;
+        }
 
-		return config;
-	}
+        return config;
+    }
 
-	/**
-	 * Determines if the request expects a streaming response.
-	 */
-	public static boolean determineIfStreamingRequest(String body) {
-		return !body.matches(".*\"stream\"\\s*:\\s*false.*");
-	}
+    /**
+     * Determines if the request expects a streaming response by checking the "stream"
+     * field in the JSON body. If "stream" is set to false, then streaming is
+     * disabled.
+     *
+     * @param body the request body
+     * @return true if request should stream responses, false otherwise
+     */
+    public static boolean determineIfStreamingRequest(String body) {
+        return !body.matches(".*\"stream\"\\s*:\\s*false.*");
+    }
 
-	/**
-	 * Builds the final request path for the backend server.
-	 */
-	public static String buildFinalRequestPath(String requestPath, String endpoint) {
-		if (endpoint.endsWith(Constants.V1_PREFIX) && requestPath.startsWith(Constants.V1_PREFIX)) {
-			return requestPath.substring(Constants.V1_PREFIX.length());
-		}
-		return requestPath;
-	}
+    /**
+     * Builds the final request path for the backend server.
+     *
+     * @param requestPath the requested path
+     * @param endpoint    the model's endpoint URL
+     * @return the modified path to be appended to the endpoint
+     */
+    public static String buildFinalRequestPath(String requestPath, String endpoint) {
+        if (endpoint.endsWith(Constants.V1_PREFIX) && requestPath.startsWith(Constants.V1_PREFIX)) {
+            return requestPath.substring(Constants.V1_PREFIX.length());
+        }
+        return requestPath;
+    }
 
-	/**
-	 * Fetches available models from all configured servers in parallel.
-	 */
-	private static void fetchAllAvailableModels() {
-		Logger.info("Fetching models from configured servers...");
+    /**
+     * Refreshes the internally registered models by fetching updated models
+     * information from all configured servers in parallel.
+     */
+    private static void refreshRegisteredModels() {
+        Logger.info("Fetching models from configured servers...");
 
-		modelBackends.clear();
-		HttpClientWrapper httpClient = new HttpClientWrapper(Constants.MODEL_CONNECTION_TIMEOUT,
-				Constants.MODEL_REQUEST_TIMEOUT);
+        registeredModels.clear();
+        HttpClientWrapper httpClient = new HttpClientWrapper(
+                Constants.MODEL_CONNECTION_TIMEOUT,
+                Constants.MODEL_REQUEST_TIMEOUT
+        );
 
-		List<CompletableFuture<Void>> fetchTasks = new ArrayList<>();
+        List<CompletableFuture<Void>> fetchTasks = new ArrayList<>();
 
-		for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : serverConfigs.entrySet()) {
-			String serverName = entry.getKey();
-			ConfigurationManager.ServerConfig config = entry.getValue();
+        for (Map.Entry<String, ConfigurationManager.ServerConfig> entry : configuredServers.entrySet()) {
+            String serverName = entry.getKey();
+            ConfigurationManager.ServerConfig config = entry.getValue();
 
-			CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
-				try {
-					List<String> models = fetchModelsFromServer(httpClient, config.endpoint(), config.apiKey());
-					models = filterModelsByAllowedList(models, config.allowedModels());
+            CompletableFuture<Void> task = CompletableFuture.runAsync(() -> {
+                try {
+                    List<String> models = retrieveServerModels(httpClient, config.endpoint(), config.apiKey());
+                    models = filterAllowedModels(models, config.allowedModels());
+                    addServerModelsToRegistry(serverName, models, config);
+                    Logger.info("Server " + serverName + " provides " + models.size() + " models");
+                } catch (Exception e) {
+                    Logger.warning("Failed to fetch models from " + serverName, e);
+                }
+            });
 
-					updateModelBackendsForServer(serverName, models, config);
+            fetchTasks.add(task);
+        }
 
-					Logger.info("Server " + serverName + " provides " + models.size() + " models");
+        // Wait for all fetches to complete
+        try {
+            CompletableFuture
+                    .allOf(fetchTasks.toArray(new CompletableFuture[0]))
+                    .get(Constants.MODEL_REQUEST_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        } catch (Exception e) {
+            Logger.warning("Some model fetches did not complete in time", e);
+        }
 
-				} catch (Exception e) {
-					Logger.warning("Failed to fetch models from " + serverName, e);
-				}
-			});
+        Logger.info("Proxy provides " + registeredModels.size() + " models: " + registeredModels.keySet());
+    }
 
-			fetchTasks.add(task);
-		}
+    /**
+     * Associates the given list of models from the specified server into the global
+     * registry.
+     *
+     * @param serverName the name of the server
+     * @param models     the list of model IDs
+     * @param config     the server configuration containing endpoint and apiKey
+     */
+    private static void addServerModelsToRegistry(String serverName, List<String> models,
+            ConfigurationManager.ServerConfig config) {
+        for (String modelName : models) {
+            registeredModels.put(modelName, new ModelConfig(config.endpoint(), modelName, config.apiKey()));
+        }
+    }
 
-		// Wait for all fetches to complete
-		try {
-			CompletableFuture.allOf(fetchTasks.toArray(new CompletableFuture[0]))
-					.get(Constants.MODEL_REQUEST_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
-		} catch (Exception e) {
-			Logger.warning("Some model fetches did not complete in time", e);
-		}
+    /**
+     * Retrieves the list of models from a specific server by issuing a request to its
+     * /models endpoint and parsing the JSON response.
+     *
+     * @param httpClient the HTTP client wrapper
+     * @param baseUrl    the server's base URL
+     * @param apiKey     the API key, if needed, for this server
+     * @return a List of model names provided by the server
+     * @throws Exception if the request fails or the server returns an unexpected status
+     */
+    private static List<String> retrieveServerModels(HttpClientWrapper httpClient, String baseUrl, String apiKey)
+            throws Exception {
+        String modelsUrl = baseUrl + Constants.MODELS_ENDPOINT;
+        URI modelsUri = URI.create(modelsUrl);
 
-		Logger.info("Proxy provides " + modelBackends.size() + " models: " + modelBackends.keySet());
-	}
+        HttpResponse<InputStream> response = httpClient.sendRequest(modelsUri, apiKey, null, false);
+        int statusCode = response.statusCode();
+        byte[] rawBody = response.body().readAllBytes();
 
-	/**
-	 * Updates the global model backends map for a specific server.
-	 */
-	private static void updateModelBackendsForServer(String serverName, List<String> models,
-			ConfigurationManager.ServerConfig config) {
-		for (String modelName : models) {
-			modelBackends.put(modelName, new ModelConfig(config.endpoint(), modelName, config.apiKey()));
-		}
-	}
+        if (statusCode != 200) {
+            throw new Exception("HTTP " + statusCode + ": " + new String(rawBody, StandardCharsets.UTF_8));
+        }
 
-	/**
-	 * Fetches available models from a specific server endpoint.
-	 */
-	private static List<String> fetchModelsFromServer(HttpClientWrapper httpClient, String baseUrl, String apiKey)
-			throws Exception {
-		String modelsUrl = baseUrl + Constants.MODELS_ENDPOINT;
-		URI modelsUri = URI.create(modelsUrl);
+        String responseBody = new String(rawBody, StandardCharsets.UTF_8);
+        return extractModelNames(responseBody);
+    }
 
-		HttpResponse<InputStream> response = httpClient.sendRequest(modelsUri, apiKey, null, false);
+    /**
+     * Extracts model names from the supplied JSON response body.
+     *
+     * @param responseBody the JSON response body from the backend server
+     * @return a list of extracted model identifiers
+     * @throws Exception if JSON parsing fails
+     */
+    private static List<String> extractModelNames(String responseBody) throws Exception {
+        JsonNode root = JSON_MAPPER.readTree(responseBody);
+        List<String> modelNames = new ArrayList<>();
 
-		if (response.statusCode() != 200) {
-			throw new Exception("HTTP " + response.statusCode() + ": "
-					+ new String(response.body().readAllBytes(), StandardCharsets.UTF_8));
-		}
+        if (root.has("data") && root.get("data").isArray()) {
+            for (JsonNode modelNode : root.get("data")) {
+                if (modelNode.has("id")) {
+                    modelNames.add(modelNode.get("id").asText());
+                }
+            }
+        }
 
-		String responseBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+        Collections.sort(modelNames);
+        return modelNames;
+    }
 
-		return parseModelNamesFromResponse(responseBody);
-	}
+    /**
+     * Filters the full list of models to include only those present in the allowed
+     * models list, if provided.
+     *
+     * @param models        the raw list of models
+     * @param allowedModels an optional list of models to allow
+     * @return a filtered list of models
+     */
+    private static List<String> filterAllowedModels(List<String> models, List<String> allowedModels) {
+        if (allowedModels == null) {
+            return models;
+        }
+        return models.stream().filter(allowedModels::contains).toList();
+    }
 
-	/**
-	 * Parses model names from API response JSON.
-	 */
-	private static List<String> parseModelNamesFromResponse(String responseBody) throws Exception {
-		JsonNode root = JSON_MAPPER.readTree(responseBody);
-		List<String> modelNames = new ArrayList<>();
+    /**
+     * Extracts the model name from the request based on endpoint type. For standard
+     * OpenAI-style calls, reads "model" from the JSON body. For llama.cpp-compatibility,
+     * falls back to the Authorization header containing a Bearer token matching the
+     * model name.
+     *
+     * @param path    the request path
+     * @param body    the request body
+     * @param headers the HTTP request headers
+     * @return the requested model name, or null if unavailable
+     */
+    private static String extractRequestedModelName(String path, String body, Map<String, String> headers) {
+        if (path.startsWith(Constants.V1_PREFIX)) {
+            try {
+                JsonNode root = JSON_MAPPER.readTree(body);
+                return root.has("model") ? root.get("model").asText() : null;
+            } catch (Exception e) {
+                Logger.error("Invalid JSON in request body");
+                return null;
+            }
+        }
 
-		if (root.has("data") && root.get("data").isArray()) {
-			for (JsonNode modelNode : root.get("data")) {
-				if (modelNode.has("id")) {
-					modelNames.add(modelNode.get("id").asText());
-				}
-			}
-		}
+        // To allow passing model name via llama.cpp API, fallback to extracting from key
+        String authHeader = headers.get("authorization");
+        return authHeader != null ? authHeader.replace("Bearer ", "") : null;
+    }
 
-		Collections.sort(modelNames);
-		return modelNames;
-	}
-
-	/**
-	 * Filters models based on allowed models list.
-	 */
-	private static List<String> filterModelsByAllowedList(List<String> models, List<String> allowedModels) {
-		if (allowedModels == null) {
-			return models;
-		}
-		return models.stream().filter(allowedModels::contains).toList();
-	}
-
-	/**
-	 * Extracts model name from request based on endpoint type.
-	 */
-	private static String extractModelNameFromRequest(String path, String body, Map<String, String> headers) {
-		if (path.startsWith(Constants.V1_PREFIX)) {
-			try {
-				JsonNode root = JSON_MAPPER.readTree(body);
-				return root.has("model") ? root.get("model").asText() : null;
-			} catch (Exception e) {
-				Logger.error("Invalid JSON in request body");
-				return null;
-			}
-		}
-
-		// To allow passing model name via llama.cpp API, fallback to extracting from key
-		String authHeader = headers.get("authorization");
-		return authHeader != null ? authHeader.replace("Bearer ", "") : null;
-	}
-
-	/**
-	 * Validates if the request path is compatible with the model's endpoint.
-	 */
-	private static boolean isValidEndpointForModel(String requestPath, String modelEndpoint) {
-		if (!requestPath.startsWith(Constants.V1_PREFIX) && modelEndpoint.endsWith(Constants.V1_PREFIX)) {
-			return false;
-		}
-		return true;
-	}
+    /**
+     * Validates if the request path is compatible with the model's endpoint.
+     *
+     * @param requestPath  the incoming request path
+     * @param modelEndpoint the model's configured endpoint
+     * @return true if valid, false otherwise
+     */
+    private static boolean validateModelEndpoint(String requestPath, String modelEndpoint) {
+        if (!requestPath.startsWith(Constants.V1_PREFIX) && modelEndpoint.endsWith(Constants.V1_PREFIX)) {
+            return false;
+        }
+        return true;
+    }
 }
