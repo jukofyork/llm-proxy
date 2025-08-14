@@ -37,11 +37,40 @@ params = { temperature = 0.9, top_p = 0.95 }  # Inherits max_tokens and stream
 params = { temperature = 0.1, top_p = 0.8, max_tokens = 2048 }  # Overrides max_tokens
 
 # ============================================================================
+# MULTI-ENDPOINT CONFIGURATIONS
+# ============================================================================
+
+# Multiple endpoints with common port
+[GPU-Cluster]
+endpoints = ["http://192.168.1.200", "http://192.168.1.201", "http://192.168.1.202"]
+port = 8080
+# Base parameters inherited by virtual endpoints
+params = { temperature = 0.7, stream = true }
+
+# Virtual endpoints apply to all endpoints and inherit base params
+[GPU-Cluster-fast]
+params = { temperature = 0.3, max_tokens = 1024 }  # Inherits stream=true
+
+[GPU-Cluster-quality]
+params = { temperature = 0.8, max_tokens = 4096 }  # Inherits stream=true
+
+# Multiple complete endpoints (load balancing)
+[Load-Balanced-API]
+endpoints = [
+    "https://api1.example.com/v1",
+    "https://api2.example.com:8443/v1",
+    "http://backup.example.com:3000/v1"
+]
+api_key = "sk-..."
+params = { temperature = 0.7, stream = true }
+
+# ============================================================================
 # LOCAL SERVERS WITH VIRTUAL CONFIGURATIONS
 # ============================================================================
 
 [LocalLLM]
-endpoint = "http://192.168.1.100:8080"
+endpoint = "http://192.168.1.100"
+ports = [8080, 8081]
 # Base settings for all virtual endpoints
 params = { stream = true, top_p = 0.9 }
 
@@ -52,26 +81,6 @@ disallowed_params = ["top_k", "repetition_penalty"]
 
 [LocalLLM-creative]
 params = { temperature = 0.8, max_tokens = 4096, top_p = 0.95 }  # Overrides top_p
-
-[LocalLLM-chat]
-params = { temperature = 0.7, max_tokens = 2048 }  # Inherits stream and top_p
-
-# ============================================================================
-# MULTI-PORT SERVERS WITH VIRTUAL VARIANTS
-# ============================================================================
-
-[GPU-Cluster]
-endpoint = "http://192.168.1.200"
-ports = [8080, 8081, 8082]
-# Base parameters inherited by virtual endpoints
-params = { temperature = 0.7, stream = true }
-
-# Virtual endpoints apply to all ports and inherit base params
-[GPU-Cluster-fast]
-params = { temperature = 0.3, max_tokens = 1024 }  # Inherits stream=true
-
-[GPU-Cluster-quality]
-params = { temperature = 0.8, max_tokens = 4096 }  # Inherits stream=true
 
 # ============================================================================
 # SPECIALIZED CONFIGURATIONS

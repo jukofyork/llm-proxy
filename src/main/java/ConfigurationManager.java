@@ -139,14 +139,67 @@ public class ConfigurationManager {
         JsonNode params = parseParamOverrides(serverNode);
         List<String> allowedParams = parseParamList(serverNode, "allowed_params");
         List<String> disallowedParams = parseParamList(serverNode, "disallowed_params");
-
-        if (serverNode.has("ports") && baseEndpoint != null) {
+    
+        // Handle multiple endpoints
+        if (serverNode.has("endpoints")) {
+            parseMultiEndpointServers(serverName, serverNode.get("endpoints"), serverNode, apiKey, allowedModels, params, allowedParams, disallowedParams);
+        }
+        // Handle single endpoint with multiple ports
+        else if (serverNode.has("ports") && baseEndpoint != null) {
             parseMultiPortServers(serverName, baseEndpoint, apiKey, allowedModels, serverNode.get("ports"), params, allowedParams, disallowedParams);
-        } else {
+        }
+        // Handle single endpoint
+        else {
             registerServer(serverName, baseEndpoint, apiKey, allowedModels, params, allowedParams, disallowedParams);
         }
     }
 
+    /**
+     * Parses server configurations for multiple endpoint entries.
+     * 
+     * This method handles configurations that specify multiple endpoints either as:
+     * 1. Multiple base URLs with a common port applied to all (endpoints + port)
+     * 2. Multiple complete endpoint URLs (endpoints only)
+     * 
+     * Each endpoint in the array will be registered as a separate server configuration
+     * with an index-based naming scheme: {serverName}-0, {serverName}-1, etc.
+     * 
+     * @param serverName       the base name of the server configuration
+     * @param endpointsNode    the JSON array node containing endpoint URLs
+     * @param serverNode       the complete server configuration node (used to check for common port)
+     * @param apiKey           the API key for authentication (applied to all endpoints)
+     * @param allowedModels    an optional list of allowed models (applied to all endpoints)
+     * @param params           parameter overrides for this server (applied to all endpoints)
+     * @param allowedParams    parameters allowed to pass through - whitelist (applied to all endpoints)
+     * @param disallowedParams parameters to block - blacklist (applied to all endpoints)
+     */
+    private static void parseMultiEndpointServers(
+            String serverName,
+            JsonNode endpointsNode,
+            JsonNode serverNode,
+            String apiKey,
+            List<String> allowedModels,
+            JsonNode params,
+            List<String> allowedParams,
+            List<String> disallowedParams
+    ) {
+        Integer commonPort = serverNode.has("port") ? serverNode.get("port").asInt() : null;
+        
+        int index = 0;
+        for (JsonNode endpointNode : endpointsNode) {
+            String endpoint = endpointNode.asText();
+            
+            // Apply common port if specified
+            if (commonPort != null) {
+                endpoint = constructEndpointWithPort(endpoint, commonPort);
+            }
+            
+            String configName = serverName + "-" + index;
+            registerServer(configName, endpoint, apiKey, allowedModels, params, allowedParams, disallowedParams);
+            index++;
+        }
+    }
+    
     /**
      * Parses the allowed models from a server configuration node.
      *
