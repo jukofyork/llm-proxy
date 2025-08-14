@@ -140,7 +140,7 @@ public class ModelsManager {
 			Logger.warning("Some model fetches did not complete in time", e);
 		}
 
-		Logger.info(modelBackends.size() + " models fooun: " + modelBackends.keySet());
+		Logger.info("Proxy provides " + modelBackends.size() + " models: " + modelBackends.keySet());
 	}
 
 	/**
