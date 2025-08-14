@@ -91,6 +91,8 @@ public class HttpProxy implements HttpHandler {
                 return;
             }
     
+            // Use transformed body from router if available, otherwise fall back to original request body
+            // This enables parameter filtering, overrides, and other request transformations
             proxyRequest(exchange, target, target.body() != null ? target.body() : body);
     
         } catch (Exception e) {
@@ -103,7 +105,6 @@ public class HttpProxy implements HttpHandler {
      * Proxies the request to the target backend server.
      */
     private void proxyRequest(HttpExchange exchange, ProxyTarget target, String body) throws IOException {
-    	Logger.info("Actually sending to backend: " + body);
         HttpResponse<InputStream> response = clientWrapper.sendRequest(
             target.uri(), 
             target.apiKey(), 
