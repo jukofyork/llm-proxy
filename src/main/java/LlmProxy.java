@@ -14,15 +14,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class LlmProxy extends HttpProxy {
 
+    /**
+     * Constructs a new LlmProxy configured with predefined constants and router.
+     */
     public LlmProxy() {
         super(
             Constants.PROXY_PORT,
             Constants.CONNECTION_TIMEOUT,
             Constants.REQUEST_TIMEOUT,
-            new LlmProxyRouter()
+            new ModelRequestRouter()
         );
     }
 
+    /**
+     * Main entry point for starting the proxy server.
+     *
+     * @param args command-line arguments
+     * @throws Exception if proxy initialization fails
+     */
     public static void main(String[] args) throws Exception {
         // Initialize configuration and models
         if (!ConfigurationManager.initialize()) {
@@ -43,16 +52,21 @@ public class LlmProxy extends HttpProxy {
     }
 
     /**
-     * Override to handle special endpoints like /models.
+     * Handles incoming HTTP requests. If the path matches the models endpoint,
+     * generates a models response; otherwise delegates the work to parent for
+     * normal proxying.
+     *
+     * @param exchange the HttpExchange representing the current request/response
+     * @throws IOException if an I/O error occurs during handling
      */
     @Override
     public void handle(HttpExchange exchange) throws IOException {
-        String path = exchange.getRequestURI().getPath();
+        String requestPath = exchange.getRequestURI().getPath();
         
         // Handle models endpoint directly
-        if (path.endsWith(Constants.MODELS_ENDPOINT)) {
-            String responseBody = ModelsManager.generateModelsResponse();
-            HttpServerWrapper.sendResponse(exchange, 200, "application/json", responseBody);
+        if (requestPath.endsWith(Constants.MODELS_ENDPOINT)) {
+            String modelsPayload = ModelsManager.generateModelsResponse();
+            HttpServerWrapper.sendResponse(exchange, 200, "application/json", modelsPayload);
             return;
         }
         
@@ -61,41 +75,63 @@ public class LlmProxy extends HttpProxy {
     }
 
     /**
-     * Router implementation that handles model-based request routing.
+     * Router implementation that determines which backend server to use based on
+     * model information contained in the request.
      */
-    private static class LlmProxyRouter implements RequestRouter {
-        
+    private static class ModelRequestRouter implements RequestRouter {
+
+        /**
+         * Routes an incoming request to the appropriate backend based on
+         * extracted model configuration.
+         *
+         * @param method  the HTTP method
+         * @param requestPath the request path
+         * @param requestBody the request body
+         * @param headers a map of request headers
+         * @return a ProxyTarget containing routing details, or null if invalid
+         */
         @Override
-        public ProxyTarget route(String method, String path, String body, Map<String, String> headers) {
+        public ProxyTarget route(String method, String requestPath, String requestBody, Map<String, String> headers) {
             // Find model configuration
-            ModelsManager.ModelConfig modelConfig = ModelsManager.findModelConfigForRequest(method, path, body, headers);
-            if (modelConfig == null) {
+            ModelsManager.ModelConfig targetModelConfig =
+                ModelsManager.findModelConfigForRequest(method, requestPath, requestBody, headers);
+            if (targetModelConfig == null) {
                 return null; // Will result in 400 error
             }
             
-            Logger.info("Routing to " + modelConfig.displayName() + " (" + modelConfig.endpoint() + ")");
+            Logger.info("Routing to " + targetModelConfig.displayName() + " (" + targetModelConfig.endpoint() + ")");
             
-            // Log request if debug enabled (with pretty printing like the old version)
-            if (Constants.DEBUG_REQUEST && !body.isEmpty()) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    JsonNode jsonNode = mapper.readTree(body);
-                    String prettyJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(jsonNode);
-                    Logger.info("Sending JSON:\n" + prettyJson + "\n---");
-                } catch (Exception e) {
-                    Logger.info("Sending JSON:\n" + body + "\n---");
-                }
-            }
+            // Log request if debug enabled
+            logRequestPayloadIfDebug(requestBody);
             
             // Build target URI
-            String finalPath = ModelsManager.buildFinalRequestPath(path, modelConfig.endpoint());
-            String fullUrl = modelConfig.endpoint() + finalPath;
-            URI targetUri = URI.create(fullUrl);
+            String resolvedPath = ModelsManager.buildFinalRequestPath(requestPath, targetModelConfig.endpoint());
+            String resolvedUrl = targetModelConfig.endpoint() + resolvedPath;
+            URI targetUri = URI.create(resolvedUrl);
             
             // Determine if streaming
-            boolean isStreaming = ModelsManager.determineIfStreamingRequest(body);
+            boolean isStreaming = ModelsManager.determineIfStreamingRequest(requestBody);
             
-            return new ProxyTarget(targetUri, modelConfig.apiKey(), isStreaming);
+            return new ProxyTarget(targetUri, targetModelConfig.apiKey(), isStreaming);
+        }
+
+        /**
+         * Logs the request body as pretty-printed JSON if debug mode is enabled.
+         *
+         * @param requestBody the raw JSON request body
+         */
+        private void logRequestPayloadIfDebug(String requestBody) {
+            if (Constants.DEBUG_REQUEST && !requestBody.isEmpty()) {
+                try {
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    JsonNode jsonNode = objectMapper.readTree(requestBody);
+                    String prettyJson = objectMapper.writerWithDefaultPrettyPrinter()
+                                                    .writeValueAsString(jsonNode);
+                    Logger.info("Sending JSON:\n" + prettyJson + "\n---");
+                } catch (Exception e) {
+                    Logger.info("Sending JSON:\n" + requestBody + "\n---");
+                }
+            }
         }
     }
 }
