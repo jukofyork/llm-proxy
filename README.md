@@ -71,27 +71,27 @@ Behavior notes:
 Example `config.toml` which I use:
 
 ```toml
-["SERVER-8080"]
-endpoint = "http://192.168.1.100:8080"
+[OpenAI]
+endpoint = "https://api.openai.com/v1"
+api_key = "sk-proj-..."
+models = [ "gpt-5", "o3", "o1" ]
+overrides = { stream = true, stream_options = { include_usage = true } }
 deny = ["/temperature"]
+default_developer_message = "Formatting re-enabled"
+hide_base_models = true
 
-["SERVER-8081"]
-endpoint = "http://192.168.1.100:8081"
-deny = ["/temperature"]
-
-["MAC-STUDIO-8080"]
-endpoint = "http://192.168.1.200:8080"
-deny = ["/temperature"]
-
-["MAC-STUDIO-8081"]
-endpoint = "http://192.168.1.200:8081"
-deny = ["/temperature"]
+[OpenAI.high]
+overrides = { reasoning_effort = "high" }
 
 [OpenRouter]
 endpoint = "https://openrouter.ai/api/v1"
-api_key = "sk-..."
-models = ["anthropic/claude-sonnet-4", "anthropic/claude-opus-4", "google/gemini-2.5-pro"]
+api_key = "sk-or-v1-..."
+models = ["anthropic/claude-sonnet-4", "anthropic/claude-opus-4.1", "google/gemini-2.5-pro"]
 overrides = { temperature = 0.0, stream = true, stream_options = { include_usage = true } }
+hide_base_models = true
+
+[OpenRouter.high]
+overrides = { reasoning = { "max_tokens" = 32000 } }
 
 [DeepSeek]
 endpoint = "https://api.deepseek.com/v1"
@@ -99,17 +99,21 @@ api_key = "sk-..."
 models = ["deepseek-chat", "deepseek-reasoner"]
 overrides = { temperature = 0.0, stream = true, stream_options = { include_usage = true } }
 
-[OpenAI]
-endpoint = "https://api.openai.com/v1"
-api_key = "sk-..."
-models = ["o1", "o3", "gpt-5"]
-overrides = { stream = true, stream_options = { include_usage = true } }
+["SERVER-Z-8080"]
+endpoint = "http://192.168.1.115:8080"
 deny = ["/temperature"]
-hide_base_models = true
-default_developer_message = "Formatting re-enabled"
 
-[OpenAI.high]
-overrides = { reasoning_effort = "high" }
+["SERVER-Z-8081"]
+endpoint = "http://192.168.1.115:8081"
+deny = ["/temperature"]
+
+["MAC-STUDIO-8080"]
+endpoint = "http://192.168.1.120:8080"
+deny = ["/temperature"]
+
+["MAC-STUDIO-8081"]
+endpoint = "http://192.168.1.120:8081"
+deny = ["/temperature"]
 ```
 
 See the example [config.toml](examples/config.toml) file for more detailed examples including multiple servers and profiles.
