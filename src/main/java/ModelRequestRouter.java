@@ -3,73 +3,52 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
- * Router implementation that determines which backend server to use based on
- * model information contained in the request. Handles request body transformation
- * including parameter filtering and overrides.
+ * Routes requests based on model name using RuntimeConfig via RouteResolver.
+ * Applies deny, defaults (missing), and overrides (force-set). Rewrites virtual model to base.
  */
 public class ModelRequestRouter implements HttpProxy.RequestRouter {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
-    /**
-     * Routes an incoming request to the appropriate backend based on
-     * extracted model configuration.
-     *
-     * @param method  the HTTP method
-     * @param requestPath the request path
-     * @param requestBody the request body
-     * @param headers a map of request headers
-     * @return a ProxyTarget containing routing details, or null if invalid
-     */
+    private final RouteResolver resolver;
+
+    public ModelRequestRouter(RuntimeConfig runtime) {
+        this.resolver = new RouteResolver(runtime);
+    }
+
     @Override
     public HttpProxy.ProxyTarget route(String method, String requestPath, String requestBody, Map<String, String> headers) {
-        // Extract model name from request
         String modelName = extractRequestedModelName(requestPath, requestBody, headers);
         if (modelName == null) {
             return null;
         }
 
-        // Get model configuration
-        ModelsManager.ModelConfig targetModelConfig = ModelsManager.getModelConfig(modelName);
-        if (targetModelConfig == null) {
+        RouteTarget target = resolver.resolve(modelName);
+        if (target == null) {
             Logger.warning("Model '" + modelName + "' not found");
             return null;
         }
 
-        // Validate endpoint compatibility
-        if (!ModelsManager.validateModelEndpoint(requestPath, targetModelConfig.endpoint())) {
+        if (!ModelsManager.validateModelEndpoint(requestPath, target.endpoint())) {
             Logger.warning("Model '" + modelName + "' endpoint mismatch");
             return null;
         }
 
-        // Transform request body based on server configuration
-        String transformedBody = transformRequestBody(requestBody, modelName);
-        
-        Logger.info("Routing to " + targetModelConfig.displayName() + " (" + targetModelConfig.endpoint() + ")");
-        
-        // Log transformed request if debug enabled
+        String transformedBody = transformRequestBody(requestBody, target, modelName);
         logRequestPayloadIfDebug(transformedBody);
-        
-        // Build target URI
-        String resolvedPath = ModelsManager.buildFinalRequestPath(requestPath, targetModelConfig.endpoint());
-        String resolvedUrl = targetModelConfig.endpoint() + resolvedPath;
-        URI targetUri = URI.create(resolvedUrl);
-        
-        // Determine if streaming (using transformed body)
+
         boolean isStreaming = determineIfStreamingRequest(transformedBody);
-        
-        return new HttpProxy.ProxyTarget(targetUri, targetModelConfig.apiKey(), isStreaming, transformedBody);
+
+        String resolvedPath = ModelsManager.buildFinalRequestPath(requestPath, target.endpoint());
+        String resolvedUrl = target.endpoint() + resolvedPath;
+        URI targetUri = URI.create(resolvedUrl);
+
+        return new HttpProxy.ProxyTarget(targetUri, target.apiKey(), isStreaming, transformedBody);
     }
 
-    /**
-     * Extracts the model name from the request based on endpoint type.
-     *
-     * @param path the request path
-     * @param body the request body
-     * @param headers the request headers
-     * @return the extracted model name, or null if not found
-     */
     private String extractRequestedModelName(String path, String body, Map<String, String> headers) {
         if (path.startsWith(Constants.V1_PREFIX)) {
             try {
@@ -80,64 +59,43 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
                 return null;
             }
         }
-
-        // To allow passing model name via llama.cpp API, fallback to extracting from key
         String authHeader = headers.get("authorization");
         return authHeader != null ? authHeader.replace("Bearer ", "") : null;
     }
 
-    /**
-     * Transforms request body based on server configuration.
-     *
-     * @param requestBody the original request body
-     * @param modelName the target model name
-     * @return the transformed request body
-     */
-    private String transformRequestBody(String requestBody, String modelName) {
+    private String transformRequestBody(String requestBody, RouteTarget target, String requestedModel) {
         if (requestBody == null || requestBody.isEmpty()) {
             return requestBody;
         }
-        
-        ConfigurationManager.ServerConfig serverConfig = ModelsManager.getServerConfigForModel(modelName);
-        if (serverConfig == null) {
-            return requestBody;
-        }
-        
+
         try {
-            JsonNode requestJson = JSON_MAPPER.readTree(requestBody);
-            
-            if (!requestJson.isObject()) {
+            JsonNode parsed = JSON_MAPPER.readTree(requestBody);
+            if (!parsed.isObject()) {
                 return requestBody;
             }
-            
-            com.fasterxml.jackson.databind.node.ObjectNode objectNode = 
-                (com.fasterxml.jackson.databind.node.ObjectNode) requestJson;
-            
-            // If this is a virtual model, replace the model name with the base model name
-            String configName = ModelsManager.getConfigNameForModel(modelName);
-            String baseModelName = extractBaseModelName(modelName, serverConfig, configName);
-            if (!baseModelName.equals(modelName)) {
-                objectNode.put("model", baseModelName);
+            ObjectNode objectNode = (ObjectNode) parsed;
+
+            // If virtual, rewrite model to base
+            if (target.isVirtual() && target.baseModelName() != null) {
+                objectNode.put("model", target.baseModelName());
             }
-            
-            // Apply disallowed parameter filtering first
-            if (serverConfig.disallowedParams() != null) {
-                for (String param : serverConfig.disallowedParams()) {
-                    removeParameterByPath(objectNode, param);
-                }
+
+            // Apply deny-list
+            JsonTransform.applyDeny(objectNode, target.denyPaths());
+
+            // Apply defaults (server+profile merged, missing only)
+            if (target.defaults() != null && target.defaults().isObject()) {
+                JsonTransform.applyDefaults(objectNode, (ObjectNode) target.defaults());
             }
-            
-            // Apply effective parameters (base + virtual merged)
-            JsonNode paramsToApply = ModelsManager.getEffectiveParamsForModel(modelName);
-            if (paramsToApply != null && paramsToApply.isObject()) {
-                try {
-                    objectNode = (com.fasterxml.jackson.databind.node.ObjectNode) 
-                        JSON_MAPPER.readerForUpdating(objectNode).readValue(paramsToApply);
-                } catch (Exception e) {
-                    Logger.warning("Failed to apply parameter overrides for model '" + modelName + "': " + e.getMessage());
-                }
+
+            // Apply overrides (server+profile merged, force-set)
+            if (target.overrides() != null && target.overrides().isObject()) {
+                JsonTransform.applyOverrides(objectNode, (ObjectNode) target.overrides());
             }
-            
+
+            // Upsert default system/developer messages for chat-style requests
+            upsertRoleDefaults(objectNode, target.defaultSystemMessage(), target.defaultDeveloperMessage());
+
             return JSON_MAPPER.writeValueAsString(objectNode);
         } catch (Exception e) {
             Logger.error("Failed to transform request body", e);
@@ -145,95 +103,77 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
         }
     }
 
-    /**
-     * Extracts the base model name from a potentially virtual model name.
-     *
-     * @param modelName the full model name (potentially virtual)
-     * @param serverConfig the server configuration
-     * @param configName the configuration name
-     * @return the base model name to send to the backend
-     */
-    private String extractBaseModelName(String modelName, ConfigurationManager.ServerConfig serverConfig, String configName) {
-        // If this is not a virtual endpoint, return original model name
-        if (serverConfig.virtualEndpointFor() == null || configName == null) {
-            return modelName;
+    private void upsertRoleDefaults(ObjectNode objectNode, String defaultSystem, String defaultDeveloper) {
+        JsonNode msgsNode = objectNode.get("messages");
+        if (msgsNode == null || !msgsNode.isArray()) {
+            return; // Only operate on chat-style payloads
         }
-        
-        String baseServerName = serverConfig.virtualEndpointFor();
-        String virtualSuffix = configName.substring(baseServerName.length() + 1);
-        
-        // Remove the virtual suffix from the model name
-        if (modelName.endsWith("-" + virtualSuffix)) {
-            return modelName.substring(0, modelName.length() - virtualSuffix.length() - 1);
+
+        ArrayNode messages = (ArrayNode) msgsNode;
+
+        // Detect existing roles
+        int firstSystemIdx = -1;
+        boolean hasDeveloper = false;
+        for (int i = 0; i < messages.size(); i++) {
+            JsonNode m = messages.get(i);
+            if (!m.isObject()) continue;
+            JsonNode role = m.get("role");
+            if (role != null && role.isTextual()) {
+                String r = role.asText();
+                if (firstSystemIdx == -1 && "system".equals(r)) {
+                    firstSystemIdx = i;
+                }
+                if ("developer".equals(r)) {
+                    hasDeveloper = true;
+                }
+            }
         }
-        
-        // Fallback to original model name
-        return modelName;
+
+        // Insert system message if missing
+        if (defaultSystem != null && firstSystemIdx == -1) {
+            ObjectNode sys = JSON_MAPPER.createObjectNode();
+            sys.put("role", "system");
+            sys.put("content", defaultSystem);
+            messages.insert(0, sys);
+            firstSystemIdx = 0; // Just inserted
+        }
+
+        // Insert developer message if missing
+        if (defaultDeveloper != null && !hasDeveloper) {
+            ObjectNode dev = JSON_MAPPER.createObjectNode();
+            dev.put("role", "developer");
+            dev.put("content", defaultDeveloper);
+
+            int insertIdx = 0;
+            if (firstSystemIdx >= 0) {
+                insertIdx = Math.min(firstSystemIdx + 1, messages.size());
+            }
+            messages.insert(insertIdx, dev);
+        }
     }
 
-    /**
-     * Removes a parameter from a JSON object by path (supports nested paths with dot notation).
-     *
-     * @param node the JSON object node to modify
-     * @param paramPath the parameter path to remove (supports dot notation for nested paths)
-     */
-    private void removeParameterByPath(com.fasterxml.jackson.databind.node.ObjectNode node, String paramPath) {
-        if (paramPath == null || paramPath.isEmpty()) {
-            return;
-        }
-        
-        if (!paramPath.contains(".")) {
-            // Simple top-level parameter
-            node.remove(paramPath);
-            return;
-        }
-        
-        // Handle nested path
-        String[] parts = paramPath.split("\\.", 2);
-        String currentKey = parts[0];
-        String remainingPath = parts[1];
-        
-        JsonNode child = node.get(currentKey);
-        if (child != null && child.isObject()) {
-            removeParameterByPath((com.fasterxml.jackson.databind.node.ObjectNode) child, remainingPath);
-        }
-    }
-    
-    /**
-     * Determines if the request expects a streaming response.
-     *
-     * @param body the request body
-     * @return true if streaming is expected, false otherwise
-     */
     private boolean determineIfStreamingRequest(String body) {
         try {
             if (body == null || body.isEmpty()) {
-                return true;  // Default if no body
+                return true;
             }
             JsonNode root = JSON_MAPPER.readTree(body);
             JsonNode streamNode = root.get("stream");
-            // If "stream" is explicitly false, disable streaming; otherwise enable it
             if (streamNode != null && streamNode.isBoolean() && !streamNode.asBoolean()) {
                 return false;
             }
             return true;
         } catch (Exception e) {
-            // If JSON is invalid, default to streaming
             return true;
         }
     }
 
-    /**
-     * Logs the request body as pretty-printed JSON if debug mode is enabled.
-     *
-     * @param requestBody the request body to log
-     */
     private void logRequestPayloadIfDebug(String requestBody) {
-        if (Constants.DEBUG_REQUEST && !requestBody.isEmpty()) {
+        if (Constants.DEBUG_REQUEST && requestBody != null && !requestBody.isEmpty()) {
             try {
                 JsonNode jsonNode = JSON_MAPPER.readTree(requestBody);
                 String prettyJson = JSON_MAPPER.writerWithDefaultPrettyPrinter()
-                                                .writeValueAsString(jsonNode);
+                        .writeValueAsString(jsonNode);
                 Logger.info("Sending JSON:\n" + prettyJson + "\n---");
             } catch (Exception e) {
                 Logger.info("Sending JSON:\n" + requestBody + "\n---");
