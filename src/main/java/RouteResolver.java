@@ -1,6 +1,5 @@
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -37,7 +36,7 @@ public class RouteResolver {
             );
         }
 
-        String chosenEndpoint = server.nextEndpoint();
+        String chosenEndpoint = server.endpoint;
 
         // Detect virtual profile by suffix
         String baseModelName = requestedModel;
@@ -86,7 +85,7 @@ public class RouteResolver {
 
     private RuntimeConfig.CompiledServer findServerByEndpoint(String endpoint) {
         for (RuntimeConfig.CompiledServer s : runtime.serversByName.values()) {
-            if (s.endpoints.contains(endpoint)) {
+            if (s.endpoint.equals(endpoint)) {
                 return s;
             }
         }

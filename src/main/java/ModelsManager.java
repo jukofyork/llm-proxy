@@ -82,8 +82,7 @@ public class ModelsManager {
         List<CompletableFuture<Void>> tasks = new ArrayList<>();
 
         for (RuntimeConfig.CompiledServer server : runtimeConfig.serversByName.values()) {
-            // Choose a representative endpoint for model listing (assumed identical across pool)
-            String endpoint = server.endpoints.get(0);
+            String endpoint = server.endpoint;
             String apiKey = "bearer".equals(server.authType) ? server.apiKey : null;
 
             CompletableFuture<Void> t = CompletableFuture.runAsync(() -> {
@@ -99,8 +98,6 @@ public class ModelsManager {
                     }
 
                     // Register virtual models (profiles) for this server
-                    // Always expand virtuals from the base model list; if no profiles, nothing is added.
-                    // If hideBaseModels=true, only profile (virtual) models will be listed.
                     for (String m : models) {
                         for (String suffix : server.profilesBySuffix.keySet()) {
                             String virtualName = m + "-" + suffix;

@@ -1,6 +1,5 @@
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -25,7 +24,7 @@ public class RuntimeConfig {
 
     public static final class CompiledServer {
         public final String name;
-        public final List<String> endpoints;
+        public final String endpoint;
         public final String authType;               // "none" | "bearer"
         public final String apiKey;                 // for "bearer"
         public final List<String> modelAllowList;   // nullable
@@ -34,11 +33,10 @@ public class RuntimeConfig {
         public final List<String> denyParamPointers;// never null
         public final Map<String, CompiledProfile> profilesBySuffix; // never null
         public final boolean hideBaseModels;        // if true, base models are not listed (only profiles)
-        private final AtomicInteger rrCounter = new AtomicInteger(0);
 
         public CompiledServer(
                 String name,
-                List<String> endpoints,
+                String endpoint,
                 String authType,
                 String apiKey,
                 List<String> modelAllowList,
@@ -48,7 +46,7 @@ public class RuntimeConfig {
                 Map<String, CompiledProfile> profilesBySuffix,
                 boolean hideBaseModels) {
             this.name = name;
-            this.endpoints = List.copyOf(endpoints);
+            this.endpoint = endpoint;
             this.authType = authType;
             this.apiKey = apiKey;
             this.modelAllowList = modelAllowList != null ? List.copyOf(modelAllowList) : null;
@@ -57,12 +55,6 @@ public class RuntimeConfig {
             this.denyParamPointers = List.copyOf(denyParamPointers);
             this.profilesBySuffix = Map.copyOf(profilesBySuffix);
             this.hideBaseModels = hideBaseModels;
-        }
-
-        public String nextEndpoint() {
-            if (endpoints.isEmpty()) return null;
-            int idx = Math.abs(rrCounter.getAndIncrement());
-            return endpoints.get(idx % endpoints.size());
         }
     }
 

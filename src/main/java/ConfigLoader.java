@@ -1,4 +1,3 @@
-// src/main/java/ConfigLoader.java
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -7,17 +6,17 @@ import java.nio.file.Path;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.toml.TomlFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Loads, validates and compiles TOML configuration into RuntimeConfig.
- * New minimal schema:
+ * Minimal schema:
  *
  * [ServerName]
- * endpoints = ["https://..."]              # or: endpoint = "http://host", ports = [8080,8081]
+ * endpoint = "https://..."                 # single endpoint per server (required)
  * api_key = "sk-..."                       # optional; if present => Bearer auth, else no auth
  * models = ["id1","id2"]                   # optional allow-list
  * defaults = { ... }                       # object; applied if missing
@@ -33,7 +32,6 @@ import com.fasterxml.jackson.dataformat.toml.TomlFactory;
 public class ConfigLoader {
 
     private static final ObjectMapper TOML = new ObjectMapper(new TomlFactory());
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     public static RuntimeConfig load(String tomlPath) {
         try {
@@ -69,12 +67,12 @@ public class ConfigLoader {
 
             ObjectNode serverObj = (ObjectNode) serverNode;
 
-            // Endpoints
-            List<String> endpoints = buildEndpoints(serverName, serverObj);
-            if (endpoints.isEmpty()) {
-                throw new IllegalArgumentException("Server [" + serverName + "] must define at least one endpoint");
+            // Endpoint (single)
+            String endpoint = getText(serverObj, "endpoint");
+            if (endpoint == null || endpoint.isEmpty()) {
+                throw new IllegalArgumentException("Server [" + serverName + "] must define 'endpoint' as a string");
             }
-            endpoints.forEach(url -> validateUrl(url, "Server [" + serverName + "] endpoint"));
+            validateUrl(endpoint, "Server [" + serverName + "] endpoint");
 
             // Auth
             String apiKey = getText(serverObj, "api_key");
@@ -91,9 +89,10 @@ public class ConfigLoader {
             // Profiles: any nested object fields that are not recognized server-level keys
             Map<String, RuntimeConfig.CompiledProfile> profiles = new HashMap<>();
             Set<String> reserved = Set.of(
-                    "endpoints", "endpoint", "port", "ports",
-                    "api_key", "models", "defaults", "overrides",
-                    "deny", "hide_base_models");
+                "endpoint",
+                "api_key", "models", "defaults", "overrides",
+                "deny", "hide_base_models"
+            );
 
             serverObj.fields().forEachRemaining(fe -> {
                 String key = fe.getKey();
@@ -113,57 +112,22 @@ public class ConfigLoader {
             boolean hideBaseModels = getBoolean(serverObj, "hide_base_models", false);
 
             RuntimeConfig.CompiledServer compiled = new RuntimeConfig.CompiledServer(
-                    serverName,
-                    endpoints,
-                    authType,
-                    apiKey,
-                    modelsAllow,
-                    defaults,
-                    overrides,
-                    deny,
-                    profiles,
-                    hideBaseModels
+                serverName,
+                endpoint,
+                authType,
+                apiKey,
+                modelsAllow,
+                defaults,
+                overrides,
+                deny,
+                profiles,
+                hideBaseModels
             );
 
             servers.put(serverName, compiled);
         });
 
         return new RuntimeConfig(servers);
-    }
-
-    private static List<String> buildEndpoints(String serverName, ObjectNode serverObj) {
-        List<String> result = new ArrayList<>();
-
-        JsonNode endpointsNode = serverObj.get("endpoints");
-        JsonNode endpointNode = serverObj.get("endpoint");
-        JsonNode portsNode = serverObj.get("ports");
-        JsonNode portNode = serverObj.get("port");
-
-        if (endpointsNode != null && endpointsNode.isArray()) {
-            List<String> bases = getStringArray(endpointsNode);
-            if (portNode != null && portNode.isInt()) {
-                int commonPort = portNode.asInt();
-                for (String base : bases) {
-                    result.add(applyPort(base, commonPort));
-                }
-            } else {
-                result.addAll(bases);
-            }
-        } else if (endpointNode != null && endpointNode.isTextual()) {
-            String base = endpointNode.asText();
-            if (portsNode != null && portsNode.isArray() && portsNode.size() > 0) {
-                for (JsonNode p : portsNode) {
-                    if (!p.isInt()) {
-                        throw new IllegalArgumentException("Server [" + serverName + "] ports must be integers");
-                    }
-                    result.add(applyPort(base, p.asInt()));
-                }
-            } else {
-                result.add(base);
-            }
-        }
-
-        return result;
     }
 
     private static String getText(ObjectNode obj, String field) {
@@ -197,7 +161,6 @@ public class ConfigLoader {
 
     private static List<String> compileDeny(ObjectNode obj) {
         List<String> out = new ArrayList<>();
-        // preferred: "deny"
         JsonNode deny = obj.get("deny");
         if (deny != null && !deny.isNull()) {
             if (!deny.isArray()) throw new IllegalArgumentException("'deny' must be an array of JSON Pointers");
@@ -235,38 +198,5 @@ public class ConfigLoader {
         } catch (Exception e) {
             throw new IllegalArgumentException(label + " invalid: " + url);
         }
-    }
-
-    private static String applyPort(String baseUrl, int port) {
-        try {
-            URI u = URI.create(baseUrl);
-            String scheme = u.getScheme();
-            String host = u.getHost();
-            String path = u.getRawPath();
-            String query = u.getRawQuery();
-            String fragment = u.getRawFragment();
-
-            if (scheme == null || host == null) return fallbackPortAppend(baseUrl, port);
-
-            URI rebuilt = new URI(
-                    scheme,
-                    null,
-                    host,
-                    port,
-                    path != null ? path : "",
-                    query,
-                    fragment
-            );
-            return rebuilt.toString();
-        } catch (Exception e) {
-            return fallbackPortAppend(baseUrl, port);
-        }
-    }
-
-    private static String fallbackPortAppend(String url, int port) {
-        int idx = url.indexOf("/", 8);
-        String base = idx > 0 ? url.substring(0, idx) : url;
-        String path = idx > 0 ? url.substring(idx) : "";
-        return base + ":" + port + path;
     }
 }
