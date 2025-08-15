@@ -23,11 +23,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * overrides = { ... }                      # object; force-set (override)
  * deny = ["/temperature","/nested/key"]    # optional JSON Pointers
  * hide_base_models = true                  # optional; default false; if true, only profile (virtual) models are listed
+ * default_system_message = "..."           # optional; add 'system' role message if missing
+ * default_developer_message = "..."        # optional; add 'developer' role message if missing
  *
  * [ServerName.profileSuffix]
  * defaults = { ... }
  * overrides = { ... }
  * deny = ["/..."]
+ * default_system_message = "..."
+ * default_developer_message = "..."
  */
 public class ConfigLoader {
 
@@ -86,12 +90,17 @@ public class ConfigLoader {
             ObjectNode overrides = objectOrEmpty(serverObj.get("overrides"));
             List<String> deny = compileDeny(serverObj);
 
+            // Prompt defaults
+            String defaultSystemMessage = getText(serverObj, "default_system_message");
+            String defaultDeveloperMessage = getText(serverObj, "default_developer_message");
+
             // Profiles: any nested object fields that are not recognized server-level keys
             Map<String, RuntimeConfig.CompiledProfile> profiles = new HashMap<>();
             Set<String> reserved = Set.of(
                 "endpoint",
                 "api_key", "models", "defaults", "overrides",
-                "deny", "hide_base_models"
+                "deny", "hide_base_models",
+                "default_system_message", "default_developer_message"
             );
 
             serverObj.fields().forEachRemaining(fe -> {
@@ -105,8 +114,20 @@ public class ConfigLoader {
                 ObjectNode pDefaults = objectOrEmpty(profObj.get("defaults"));
                 ObjectNode pOverrides = objectOrEmpty(profObj.get("overrides"));
                 List<String> pDeny = compileDeny(profObj);
+                String pDefaultSystemMessage = getText(profObj, "default_system_message");
+                String pDefaultDeveloperMessage = getText(profObj, "default_developer_message");
 
-                profiles.put(suffix, new RuntimeConfig.CompiledProfile(suffix, pDefaults, pOverrides, pDeny));
+                profiles.put(
+                    suffix,
+                    new RuntimeConfig.CompiledProfile(
+                        suffix,
+                        pDefaults,
+                        pOverrides,
+                        pDeny,
+                        pDefaultSystemMessage,
+                        pDefaultDeveloperMessage
+                    )
+                );
             });
 
             boolean hideBaseModels = getBoolean(serverObj, "hide_base_models", false);
@@ -121,7 +142,9 @@ public class ConfigLoader {
                 overrides,
                 deny,
                 profiles,
-                hideBaseModels
+                hideBaseModels,
+                defaultSystemMessage,
+                defaultDeveloperMessage
             );
 
             servers.put(serverName, compiled);

@@ -4,6 +4,7 @@
 # - Defaults (applied if missing) and deny policy
 # - Virtual profiles (suffix-based) with overrides
 # - Hiding base models (only expose profile-suffixed models)
+# - Default system/developer message upsert (added if missing)
 # - Multi-node setups declared as separate servers (one endpoint each)
 # - Local servers without auth
 
@@ -15,12 +16,15 @@ models = ["gpt-4", "o1-preview"]
 defaults = { stream = true, stream_options = { include_usage = true } }
 deny = ["/temperature"]
 hide_base_models = true
+default_system_message = "You are a helpful assistant. Keep answers concise."
+default_developer_message = "Follow internal style guidelines."
 
 [OpenAI.fast]
 overrides = { stream = false, reasoning_effort = "low" }
 
 [OpenAI.high]
 overrides = { reasoning_effort = "high" }
+default_system_message = "Think step-by-step and favor accuracy."
 
 # Anthropic: standard base + two profiles; base models remain visible
 [Anthropic]
@@ -28,6 +32,7 @@ endpoint = "https://api.anthropic.com/v1"
 api_key = "sk-ant-..."
 models = ["claude-3-5-sonnet-20241022"]
 defaults = { stream = true }
+default_system_message = "You are Claude. Be precise and safe."
 
 [Anthropic.creative]
 overrides = { temperature = 0.9, top_p = 0.95 }
@@ -53,6 +58,7 @@ defaults = { stream = true }
 endpoint = "http://192.168.1.100:8080"
 defaults = { stream = true, top_p = 0.9 }
 deny = ["/top_k", "/repetition_penalty"]
+default_system_message = "Local policy: avoid unsafe content."
 
 [LocalLLM-8080.coding]
 overrides = { temperature = 0.2 }

@@ -13,12 +13,23 @@ public class RuntimeConfig {
         public final ObjectNode defaults;   // applied if missing
         public final ObjectNode overrides;  // force-set (override)
         public final List<String> deny;     // JSON Pointers
+        public final String defaultSystemMessage;     // nullable
+        public final String defaultDeveloperMessage;  // nullable
 
-        public CompiledProfile(String suffix, ObjectNode defaults, ObjectNode overrides, List<String> deny) {
+        public CompiledProfile(
+                String suffix,
+                ObjectNode defaults,
+                ObjectNode overrides,
+                List<String> deny,
+                String defaultSystemMessage,
+                String defaultDeveloperMessage
+        ) {
             this.suffix = suffix;
             this.defaults = defaults;
             this.overrides = overrides;
             this.deny = deny != null ? List.copyOf(deny) : List.of();
+            this.defaultSystemMessage = defaultSystemMessage;
+            this.defaultDeveloperMessage = defaultDeveloperMessage;
         }
     }
 
@@ -33,6 +44,8 @@ public class RuntimeConfig {
         public final List<String> denyParamPointers;// never null
         public final Map<String, CompiledProfile> profilesBySuffix; // never null
         public final boolean hideBaseModels;        // if true, base models are not listed (only profiles)
+        public final String defaultSystemMessage;     // nullable
+        public final String defaultDeveloperMessage;  // nullable
 
         public CompiledServer(
                 String name,
@@ -44,7 +57,10 @@ public class RuntimeConfig {
                 ObjectNode paramOverrides,
                 List<String> denyParamPointers,
                 Map<String, CompiledProfile> profilesBySuffix,
-                boolean hideBaseModels) {
+                boolean hideBaseModels,
+                String defaultSystemMessage,
+                String defaultDeveloperMessage
+        ) {
             this.name = name;
             this.endpoint = endpoint;
             this.authType = authType;
@@ -55,6 +71,8 @@ public class RuntimeConfig {
             this.denyParamPointers = List.copyOf(denyParamPointers);
             this.profilesBySuffix = Map.copyOf(profilesBySuffix);
             this.hideBaseModels = hideBaseModels;
+            this.defaultSystemMessage = defaultSystemMessage;
+            this.defaultDeveloperMessage = defaultDeveloperMessage;
         }
     }
 

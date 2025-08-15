@@ -3,6 +3,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
@@ -92,10 +93,62 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
                 JsonTransform.applyOverrides(objectNode, (ObjectNode) target.overrides());
             }
 
+            // Upsert default system/developer messages for chat-style requests
+            upsertRoleDefaults(objectNode, target.defaultSystemMessage(), target.defaultDeveloperMessage());
+
             return JSON_MAPPER.writeValueAsString(objectNode);
         } catch (Exception e) {
             Logger.error("Failed to transform request body", e);
             return requestBody;
+        }
+    }
+
+    private void upsertRoleDefaults(ObjectNode objectNode, String defaultSystem, String defaultDeveloper) {
+        JsonNode msgsNode = objectNode.get("messages");
+        if (msgsNode == null || !msgsNode.isArray()) {
+            return; // Only operate on chat-style payloads
+        }
+
+        ArrayNode messages = (ArrayNode) msgsNode;
+
+        // Detect existing roles
+        int firstSystemIdx = -1;
+        boolean hasDeveloper = false;
+        for (int i = 0; i < messages.size(); i++) {
+            JsonNode m = messages.get(i);
+            if (!m.isObject()) continue;
+            JsonNode role = m.get("role");
+            if (role != null && role.isTextual()) {
+                String r = role.asText();
+                if (firstSystemIdx == -1 && "system".equals(r)) {
+                    firstSystemIdx = i;
+                }
+                if ("developer".equals(r)) {
+                    hasDeveloper = true;
+                }
+            }
+        }
+
+        // Insert system message if missing
+        if (defaultSystem != null && firstSystemIdx == -1) {
+            ObjectNode sys = JSON_MAPPER.createObjectNode();
+            sys.put("role", "system");
+            sys.put("content", defaultSystem);
+            messages.insert(0, sys);
+            firstSystemIdx = 0; // Just inserted
+        }
+
+        // Insert developer message if missing
+        if (defaultDeveloper != null && !hasDeveloper) {
+            ObjectNode dev = JSON_MAPPER.createObjectNode();
+            dev.put("role", "developer");
+            dev.put("content", defaultDeveloper);
+
+            int insertIdx = 0;
+            if (firstSystemIdx >= 0) {
+                insertIdx = Math.min(firstSystemIdx + 1, messages.size());
+            }
+            messages.insert(insertIdx, dev);
         }
     }
 

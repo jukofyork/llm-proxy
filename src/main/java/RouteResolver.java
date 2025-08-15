@@ -30,6 +30,8 @@ public class RouteResolver {
                     modelCfg.apiKey(),
                     false,
                     requestedModel,
+                    null,
+                    null,
                     List.of(),
                     emptyObject(),
                     emptyObject()
@@ -70,6 +72,18 @@ public class RouteResolver {
             JsonTransform.applyOverrides(mergedOverrides, profile.overrides);
         }
 
+        // Resolve default messages (profile overrides server if present)
+        String effectiveSystemMessage = server.defaultSystemMessage;
+        String effectiveDeveloperMessage = server.defaultDeveloperMessage;
+        if (profile != null) {
+            if (profile.defaultSystemMessage != null) {
+                effectiveSystemMessage = profile.defaultSystemMessage;
+            }
+            if (profile.defaultDeveloperMessage != null) {
+                effectiveDeveloperMessage = profile.defaultDeveloperMessage;
+            }
+        }
+
         String apiKey = "bearer".equals(server.authType) ? server.apiKey : null;
 
         return new RouteTarget(
@@ -77,6 +91,8 @@ public class RouteResolver {
                 apiKey,
                 isVirtual,
                 baseModelName,
+                effectiveSystemMessage,
+                effectiveDeveloperMessage,
                 List.copyOf(deny),
                 mergedDefaults,
                 mergedOverrides

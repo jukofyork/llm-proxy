@@ -10,6 +10,8 @@ public record RouteTarget(
         String apiKey,
         boolean isVirtual,
         String baseModelName,
+        String defaultSystemMessage,
+        String defaultDeveloperMessage,
         List<String> denyPaths,
         JsonNode defaults,
         JsonNode overrides
