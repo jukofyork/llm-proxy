@@ -90,7 +90,7 @@ deny = ["/top_k"]
 default_developer_message = "Follow local safety policies."
 ```
 
-See `examples/config.toml` for more patterns including multiple servers and profiles.
+See the example [config.toml](examples/config.toml) file for more patterns including multiple servers and profiles.
 
 ---
 
