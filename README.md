@@ -68,29 +68,51 @@ Behavior notes:
   - For non-`/v1` paths, the proxy extracts the model from the inbound `Authorization: Bearer <model>` header
   - The inbound Authorization header is not forwarded to the backend (the backend Authorization is derived from `api_key`, if configured)
 
-Minimal example snippet:
+Example `config.toml` which I use:
+
 ```toml
+["SERVER-8080"]
+endpoint = "http://192.168.1.100:8080"
+deny = ["/temperature"]
+
+["SERVER-8081"]
+endpoint = "http://192.168.1.100:8081"
+deny = ["/temperature"]
+
+["MAC-STUDIO-8080"]
+endpoint = "http://192.168.1.200:8080"
+deny = ["/temperature"]
+
+["MAC-STUDIO-8081"]
+endpoint = "http://192.168.1.200:8081"
+deny = ["/temperature"]
+
+[OpenRouter]
+endpoint = "https://openrouter.ai/api/v1"
+api_key = "sk-..."
+models = ["anthropic/claude-sonnet-4", "anthropic/claude-opus-4", "google/gemini-2.5-pro"]
+overrides = { temperature = 0.0, stream = true, stream_options = { include_usage = true } }
+
+[DeepSeek]
+endpoint = "https://api.deepseek.com/v1"
+api_key = "sk-..."
+models = ["deepseek-chat", "deepseek-reasoner"]
+overrides = { temperature = 0.0, stream = true, stream_options = { include_usage = true } }
+
 [OpenAI]
 endpoint = "https://api.openai.com/v1"
-api_key = "sk-proj-..."
-models = ["gpt-4", "o1-preview"]
-defaults = { stream = true }
+api_key = "sk-..."
+models = ["o1", "o3", "gpt-5"]
+overrides = { stream = true, stream_options = { include_usage = true } }
 deny = ["/temperature"]
 hide_base_models = true
-default_system_message = "You are a helpful assistant."
+default_developer_message = "Formatting re-enabled"
 
-[OpenAI.fast]
-overrides = { stream = false }
-default_system_message = "Be concise and fast."
-
-[LocalLLM]
-endpoint = "http://192.168.1.100:8080"
-defaults = { stream = true, top_p = 0.9 }
-deny = ["/top_k"]
-default_developer_message = "Follow local safety policies."
+[OpenAI.high]
+overrides = { reasoning_effort = "high" }
 ```
 
-See the example [config.toml](examples/config.toml) file for more patterns including multiple servers and profiles.
+See the example [config.toml](examples/config.toml) file for more detailed examples including multiple servers and profiles.
 
 ---
 
