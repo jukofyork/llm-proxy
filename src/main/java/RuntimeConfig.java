@@ -33,6 +33,7 @@ public class RuntimeConfig {
         public final ObjectNode paramOverrides;     // never null
         public final List<String> denyParamPointers;// never null
         public final Map<String, CompiledProfile> profilesBySuffix; // never null
+        public final boolean hideBaseModels;        // if true, base models are not listed (only profiles)
         private final AtomicInteger rrCounter = new AtomicInteger(0);
 
         public CompiledServer(
@@ -44,7 +45,8 @@ public class RuntimeConfig {
                 ObjectNode paramDefaults,
                 ObjectNode paramOverrides,
                 List<String> denyParamPointers,
-                Map<String, CompiledProfile> profilesBySuffix) {
+                Map<String, CompiledProfile> profilesBySuffix,
+                boolean hideBaseModels) {
             this.name = name;
             this.endpoints = List.copyOf(endpoints);
             this.authType = authType;
@@ -54,6 +56,7 @@ public class RuntimeConfig {
             this.paramOverrides = paramOverrides;
             this.denyParamPointers = List.copyOf(denyParamPointers);
             this.profilesBySuffix = Map.copyOf(profilesBySuffix);
+            this.hideBaseModels = hideBaseModels;
         }
 
         public String nextEndpoint() {

@@ -23,6 +23,7 @@ import com.fasterxml.jackson.dataformat.toml.TomlFactory;
  * defaults = { ... }                       # object; applied if missing
  * overrides = { ... }                      # object; force-set (override)
  * deny = ["/temperature","/nested/key"]    # optional JSON Pointers
+ * hide_base_models = true                  # optional; default false; if true, only profile (virtual) models are listed
  *
  * [ServerName.profileSuffix]
  * defaults = { ... }
@@ -92,7 +93,7 @@ public class ConfigLoader {
             Set<String> reserved = Set.of(
                     "endpoints", "endpoint", "port", "ports",
                     "api_key", "models", "defaults", "overrides",
-                    "deny");
+                    "deny", "hide_base_models");
 
             serverObj.fields().forEachRemaining(fe -> {
                 String key = fe.getKey();
@@ -109,6 +110,8 @@ public class ConfigLoader {
                 profiles.put(suffix, new RuntimeConfig.CompiledProfile(suffix, pDefaults, pOverrides, pDeny));
             });
 
+            boolean hideBaseModels = getBoolean(serverObj, "hide_base_models", false);
+
             RuntimeConfig.CompiledServer compiled = new RuntimeConfig.CompiledServer(
                     serverName,
                     endpoints,
@@ -118,7 +121,8 @@ public class ConfigLoader {
                     defaults,
                     overrides,
                     deny,
-                    profiles
+                    profiles,
+                    hideBaseModels
             );
 
             servers.put(serverName, compiled);
@@ -165,6 +169,13 @@ public class ConfigLoader {
     private static String getText(ObjectNode obj, String field) {
         JsonNode n = obj.get(field);
         return (n != null && n.isTextual()) ? n.asText() : null;
+    }
+
+    private static boolean getBoolean(ObjectNode obj, String field, boolean defaultVal) {
+        JsonNode n = obj.get(field);
+        if (n == null || n.isNull()) return defaultVal;
+        if (!n.isBoolean()) throw new IllegalArgumentException("Expected boolean for '" + field + "' but got: " + n.getNodeType());
+        return n.asBoolean();
     }
 
     private static List<String> getStringArray(JsonNode node) {

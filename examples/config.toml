@@ -3,22 +3,26 @@
 # - Model allow-list
 # - Defaults (applied if missing) and deny policy
 # - Virtual profiles (suffix-based) with overrides
+# - Hiding base models (only expose profile-suffixed models)
 # - Multi-endpoint pool (implicit round-robin)
 # - Local servers without auth and port expansion
 
+# OpenAI: hide base models; only expose profile-suffixed variants (e.g., gpt-4-fast, o1-preview-high)
 [OpenAI]
 endpoints = ["https://api.openai.com/v1"]
 api_key = "sk-proj-..."
 models = ["gpt-4", "o1-preview"]
 defaults = { stream = true, stream_options = { include_usage = true } }
 deny = ["/temperature"]
+hide_base_models = true
 
 [OpenAI.fast]
 overrides = { stream = false, reasoning_effort = "low" }
 
-[OpenAI.high_reasoning]
+[OpenAI.high]
 overrides = { reasoning_effort = "high" }
 
+# Anthropic: standard base + two profiles; base models remain visible
 [Anthropic]
 endpoints = ["https://api.anthropic.com/v1"]
 api_key = "sk-ant-..."
@@ -31,6 +35,7 @@ overrides = { temperature = 0.9, top_p = 0.95 }
 [Anthropic.precise]
 overrides = { temperature = 0.1, top_p = 0.8 }
 
+# GPU-Cluster: multi-endpoint pool (round-robin implied by multiple endpoints)
 ["GPU-Cluster"]
 endpoints = [
   "http://192.168.1.200:8080",
@@ -42,6 +47,7 @@ defaults = { stream = true }
 ["GPU-Cluster".quality]
 overrides = { temperature = 0.8 }
 
+# LocalLLM: local host with port expansion, deny policy, and profiles
 [LocalLLM]
 endpoint = "http://192.168.1.100"
 ports = [8080, 8081]

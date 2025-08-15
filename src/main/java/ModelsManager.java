@@ -91,12 +91,16 @@ public class ModelsManager {
                     List<String> models = retrieveServerModels(httpClient, endpoint, apiKey);
                     models = filterAllowedModels(models, server.modelAllowList);
 
-                    // Register base models
-                    for (String m : models) {
-                        temp.put(m, new ModelConfig(endpoint, m, apiKey));
+                    // Register base models (optional)
+                    if (!server.hideBaseModels) {
+                        for (String m : models) {
+                            temp.put(m, new ModelConfig(endpoint, m, apiKey));
+                        }
                     }
 
                     // Register virtual models (profiles) for this server
+                    // Always expand virtuals from the base model list; if no profiles, nothing is added.
+                    // If hideBaseModels=true, only profile (virtual) models will be listed.
                     for (String m : models) {
                         for (String suffix : server.profilesBySuffix.keySet()) {
                             String virtualName = m + "-" + suffix;
