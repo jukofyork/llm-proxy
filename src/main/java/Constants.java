@@ -26,9 +26,8 @@ public final class Constants {
     public static final Duration MODEL_REFRESH_TTL = Duration.ofSeconds(60);
 
     // Timeout Constants
-    // NOTE: The new o-series models can take ages to reply... 5 minutes response time should hopefully be enough.
     public static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(10);
-    public static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(300);
+    public static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(3600); // TODO: make configurable
 
     // API Constants
     public static final String V1_PREFIX = "/v1";
