@@ -127,21 +127,34 @@ public class ModelsManager {
         lastRefreshTime = Instant.now();
     }
 
-    private static List<String> retrieveServerModels(HttpClientWrapper httpClient, String baseUrl, String apiKey)
-            throws Exception {
-        String modelsUrl = baseUrl + Constants.MODELS_ENDPOINT;
-        URI modelsUri = URI.create(modelsUrl);
-
-        HttpResponse<InputStream> response = httpClient.sendRequest(modelsUri, apiKey, null, false);
-        int statusCode = response.statusCode();
-        byte[] rawBody = response.body().readAllBytes();
-
-        if (statusCode != 200) {
-            throw new Exception("HTTP " + statusCode + ": " + new String(rawBody, StandardCharsets.UTF_8));
+	private static List<String> retrieveServerModels(HttpClientWrapper httpClient, String baseUrl, String apiKey)
+			throws Exception {
+		
+		// NOTE: We need to try both endpoints, as ik_llama.cpp returns 404 for the "/models" endpoint.
+        String[] endpointPaths = {Constants.MODELS_ENDPOINT, Constants.V1_PREFIX + Constants.MODELS_ENDPOINT};
+        
+        Map<String, Integer> failedAttempts = new LinkedHashMap<>();
+        
+        for (String path : endpointPaths) {
+            String url = baseUrl + path;
+            URI uri = URI.create(url);
+            HttpResponse<InputStream> response = httpClient.sendRequest(uri, apiKey, null, false);
+            int statusCode = response.statusCode();
+            
+            if (statusCode == 200) {
+                byte[] rawBody = response.body().readAllBytes();
+                String responseBody = new String(rawBody, StandardCharsets.UTF_8);
+                return extractModelNames(responseBody);
+            }
+            
+            failedAttempts.put(path, statusCode);
         }
-
-        String responseBody = new String(rawBody, StandardCharsets.UTF_8);
-        return extractModelNames(responseBody);
+        
+        String errorMsg = failedAttempts.entrySet().stream()
+                .map(e -> "HTTP " + e.getValue() + " (" + e.getKey() + ")")
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("Unknown error");
+        throw new Exception("Failed to fetch models: " + errorMsg);
     }
 
     private static List<String> extractModelNames(String responseBody) throws Exception {
