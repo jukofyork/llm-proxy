@@ -175,7 +175,36 @@ public class ModelsManager {
 
     private static List<String> filterAllowedModels(List<String> models, List<String> allow) {
         if (allow == null || allow.isEmpty()) return models;
-        Set<String> allowSet = new HashSet<>(allow);
-        return models.stream().filter(allowSet::contains).toList();
+        
+        Set<String> allowed = new HashSet<>();
+        List<String> hidden = new ArrayList<>();
+        
+        // Hidden models are prefixed with * and should be added regardless of whether they appear in the models list.
+        // Example: "*accounts/fireworks/routers/kimi-k2p5-turbo" is a hidden model for Fireworks' "Fire Pass" plan.
+        for (String a : allow) {
+            if (a.startsWith("*")) {
+                if (a.length() > 1) hidden.add(a.substring(1));
+            } else {
+                allowed.add(a);
+            }
+        }
+        
+        List<String> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        
+        for (String m : models) {
+            if (allowed.contains(m) && seen.add(m)) {
+                result.add(m);
+            }
+        }
+        
+        for (String h : hidden) {
+            if (seen.add(h)) {
+                result.add(h);
+            }
+        }
+        
+        return result;
     }
+
 }

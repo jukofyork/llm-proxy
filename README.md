@@ -5,7 +5,7 @@ A lightweight, OpenAI-compatible HTTP proxy that routes requests to multiple bac
 Key capabilities:
 - Single endpoint per server
 - Bearer auth via `api_key`
-- Model allow-list
+- Model allow-list (including hidden models via `*` prefix)
 - Defaults (apply if missing), overrides (force-set), and deny (JSON Pointers)
 - Virtual model profiles (suffix-based)
 - Option to hide base models (expose only profile-suffixed models)
@@ -44,7 +44,7 @@ Schema overview:
   - `endpoint` (string, required): Base URL to the backend (eg: `https://api.openai.com/v1`)
     - If the endpoint ends with `/v1` and you call `/v1/...`, the proxy strips the duplicate `/v1` once.
   - `api_key` (string, optional): If provided, forwarded as `Authorization: Bearer <api_key>` to the backend
-  - `models` (array[string], optional): Allow-list; only these models are exposed
+  - `models` (array[string], optional): Allow-list; only these models are exposed. Prefix with `*` to add hidden models that bypass the backend's `/v1/models` list (eg: Fireworks Fire Pass models).
   - `defaults` (object, optional): Deep merge applied only for missing fields (objects only)
   - `overrides` (object, optional): Deep merge that force-sets values (overwrites request fields)
   - `deny` (array[string], optional): Fields to remove (JSON Pointers, or dot-paths converted to pointers)
@@ -64,6 +64,7 @@ Behavior notes:
   - `defaults.messages` is used only if `messages` is entirely absent
 - deny removes object fields only (array element removal is not supported)
 - Profile-level values override server-level values for that request
+- Hidden models: prefix any model in `models` with `*` to expose it even if the backend doesn't list it in `/v1/models`. The `*` is stripped when routing to the backend.
 - llama.cpp-style routing:
   - For non-`/v1` paths, the proxy extracts the model from the inbound `Authorization: Bearer <model>` header
   - The inbound Authorization header is not forwarded to the backend (the backend Authorization is derived from `api_key`, if configured)
@@ -99,6 +100,12 @@ api_key = "sk-..."
 models = ["deepseek-chat", "deepseek-reasoner"]
 overrides = { temperature = 0.0, stream = true, stream_options = { include_usage = true } }
 
+[Fireworks]
+endpoint = "https://api.fireworks.ai/inference/v1"
+api_key = "fw_..."
+models = ["*accounts/fireworks/routers/kimi-k2p5-turbo"]
+overrides = { temperature = 0.0, stream = true, stream_options = { include_usage = true } }
+
 ["SERVER-Z-8080"]
 endpoint = "http://192.168.1.115:8080"
 deny = ["/temperature"]
@@ -125,6 +132,7 @@ See the example [config.toml](examples/config.toml) file for more detailed examp
 - Models listing: `GET /v1/models`
   - The proxy aggregates models from all configured servers, applying allow-lists and profile expansion
   - Respects `hide_base_models` (shows only profile-suffixed models if enabled)
+  - Hidden models (prefixed with `*` in config) are included in the listing with the `*` removed
 
 - Chat Completions (OpenAI-compatible):
   - The proxy applies deny → defaults → overrides
@@ -150,10 +158,11 @@ See the example [config.toml](examples/config.toml) file for more detailed examp
 ## Troubleshooting
 
 - Ensure `config.toml` (or whatever `Constants.CONFIG_FILE` points to) is readable and follows the schema
-- If models aren’t visible in `/v1/models`:
+- If models aren't visible in `/v1/models`:
   - Check allow-lists (`models`)
   - Check `hide_base_models`
   - Verify the backend supports `/v1/models` and returns expected data
+  - For hidden models (prefixed with `*`), ensure the `*` is present in the config and the full model name is correct
 - Enable `Constants.DEBUG_REQUEST` to log transformed requests (be mindful of sensitive data)
 
 ---
