@@ -26,15 +26,25 @@ public class ModelsManager {
 
     private static Instant lastRefreshTime = Instant.EPOCH;
 
+    private static ScheduledExecutorService scheduledExecutor;
+
     private ModelsManager() {}
 
     public static boolean initialize(RuntimeConfig runtime) {
         runtimeConfig = runtime;
+
+        // Perform initial synchronous fetch before accepting requests
+        Logger.info("Initializing model registry...");
+        refreshRegisteredModelsSync();
+
+        // Start periodic background refresh
+        startPeriodicRefresh();
+
         return true;
     }
 
     public static String generateModelsResponse() {
-        refreshRegisteredModels();
+        refreshRegisteredModelsAsync();
 
         try {
             List<Map<String, String>> models = registeredModels.keySet().stream()
@@ -51,6 +61,16 @@ public class ModelsManager {
     }
 
     public static ModelConfig getModelConfig(String modelName) {
+        ModelConfig config = registeredModels.get(modelName);
+        if (config != null) {
+            return config;
+        }
+
+        // Model not found - trigger synchronous refresh (bypass TTL)
+        Logger.info("Model '" + modelName + "' not in registry, triggering refresh...");
+        refreshRegisteredModelsSync();
+
+        // Check again after refresh
         return registeredModels.get(modelName);
     }
 
@@ -68,8 +88,39 @@ public class ModelsManager {
         return requestPath;
     }
 
-    private static void refreshRegisteredModels() {
+    private static void startPeriodicRefresh() {
+        if (scheduledExecutor != null && !scheduledExecutor.isShutdown()) {
+            return;
+        }
+
+        scheduledExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "models-refresh");
+            t.setDaemon(true);
+            return t;
+        });
+
+        scheduledExecutor.scheduleAtFixedRate(
+                ModelsManager::refreshRegisteredModelsAsync,
+                Constants.MODEL_REFRESH_TTL.toSeconds(),
+                Constants.MODEL_REFRESH_TTL.toSeconds(),
+                TimeUnit.SECONDS
+        );
+
+        Logger.info("Started periodic model refresh every " + Constants.MODEL_REFRESH_TTL.toSeconds() + " seconds");
+    }
+
+    private static void refreshRegisteredModelsAsync() {
+        // Async refresh respects TTL - only refresh if TTL expired
         if (Instant.now().isBefore(lastRefreshTime.plus(Constants.MODEL_REFRESH_TTL))) {
+            return;
+        }
+
+        CompletableFuture.runAsync(ModelsManager::refreshRegisteredModelsSync);
+    }
+
+    private static void refreshRegisteredModelsSync() {
+        if (runtimeConfig == null) {
+            Logger.warning("ModelsManager not initialized");
             return;
         }
 
@@ -122,9 +173,13 @@ public class ModelsManager {
             Logger.warning("Some model fetches did not complete in time", e);
         }
 
-        registeredModels.clear();
+        // Atomic update: putAll updates/adds entries, then remove stale entries
+        // This avoids a window where the map is empty (race condition)
         registeredModels.putAll(temp);
+        registeredModels.keySet().retainAll(temp.keySet());
         lastRefreshTime = Instant.now();
+
+        Logger.info("Model registry updated: " + registeredModels.size() + " models registered");
     }
 
 	private static List<String> retrieveServerModels(HttpClientWrapper httpClient, String baseUrl, String apiKey)

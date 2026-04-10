@@ -23,7 +23,7 @@ public final class Constants {
     // Model manager's timeout constants
     public static final Duration MODEL_CONNECTION_TIMEOUT = Duration.ofSeconds(2);
     public static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(5);
-    public static final Duration MODEL_REFRESH_TTL = Duration.ofSeconds(60);
+    public static final Duration MODEL_REFRESH_TTL = Duration.ofSeconds(300);
 
     // Timeout Constants
     public static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(10);

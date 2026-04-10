@@ -50,17 +50,16 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
     }
 
     private String extractRequestedModelName(String path, String body, Map<String, String> headers) {
-        if (path.startsWith(Constants.V1_PREFIX)) {
-            try {
-                JsonNode root = JSON_MAPPER.readTree(body);
-                return root.has("model") ? root.get("model").asText() : null;
-            } catch (Exception e) {
-                Logger.error("Invalid JSON in request body");
-                return null;
-            }
+        if (!path.startsWith(Constants.V1_PREFIX)) {
+            return null;
         }
-        String authHeader = headers.get("authorization");
-        return authHeader != null ? authHeader.replace("Bearer ", "") : null;
+        try {
+            JsonNode root = JSON_MAPPER.readTree(body);
+            return root.has("model") ? root.get("model").asText() : null;
+        } catch (Exception e) {
+            Logger.error("Invalid JSON in request body");
+            return null;
+        }
     }
 
     private String transformRequestBody(String requestBody, RouteTarget target, String requestedModel) {

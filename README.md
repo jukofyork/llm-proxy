@@ -10,7 +10,6 @@ Key capabilities:
 - Virtual model profiles (suffix-based)
 - Option to hide base models (expose only profile-suffixed models)
 - Default system/developer messages upsert (added if missing)
-- llama.cpp-style routing (model via Authorization header on non-`/v1` paths)
 
 ---
 
@@ -65,9 +64,6 @@ Behavior notes:
 - deny removes object fields only (array element removal is not supported)
 - Profile-level values override server-level values for that request
 - Hidden models: prefix any model in `models` with `*` to expose it even if the backend doesn't list it in `/v1/models`. The `*` is stripped when routing to the backend.
-- llama.cpp-style routing:
-  - For non-`/v1` paths, the proxy extracts the model from the inbound `Authorization: Bearer <model>` header
-  - The inbound Authorization header is not forwarded to the backend (the backend Authorization is derived from `api_key`, if configured)
 
 Example `config.toml` which I use:
 
@@ -137,10 +133,7 @@ See the example [config.toml](examples/config.toml) file for more detailed examp
 - Chat Completions (OpenAI-compatible):
   - The proxy applies deny → defaults → overrides
   - Virtual models: incoming `model: base-suffix` is rewritten to `base` for the backend
-  - Streaming (SSE) is enabled by default unless `"stream": false` is explicitly set
-
-- llama.cpp-style:
-  - For requests not under `/v1`, the proxy extracts the model from `Authorization: Bearer <model>` and routes accordingly
+  - Streaming (SSE) is disabled by default; set `"stream": true` to enable
 
 ---
 
