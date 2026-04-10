@@ -153,18 +153,13 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
     }
 
     private boolean determineIfStreamingRequest(String body) {
+        if (body == null || body.isEmpty()) {
+            return false;
+        }
         try {
-            if (body == null || body.isEmpty()) {
-                return true;
-            }
-            JsonNode root = JSON_MAPPER.readTree(body);
-            JsonNode streamNode = root.get("stream");
-            if (streamNode != null && streamNode.isBoolean() && !streamNode.asBoolean()) {
-                return false;
-            }
-            return true;
+            return JSON_MAPPER.readTree(body).path("stream").asBoolean(false);
         } catch (Exception e) {
-            return true;
+            return false;
         }
     }
 
