@@ -41,6 +41,12 @@ public final class ProxySettings {
     // Config file
     public String configFile = "llm-proxy.toml";
 
+    // Config file watch debounce interval (seconds). 0 = disable watching.
+    public static final int MIN_WATCH_INTERVAL = 0;
+    public static final int MAX_WATCH_INTERVAL = 60;
+    public static final int DEFAULT_WATCH_INTERVAL = 1;
+    public int watchInterval = DEFAULT_WATCH_INTERVAL;
+
     private ProxySettings() {}
 
     /**
@@ -168,6 +174,15 @@ public final class ProxySettings {
                             " exceeds maximum of " + formatDuration(MAX_MODEL_REFRESH_INTERVAL)
             );
         }
+
+        // Validate watch interval
+        if (watchInterval < MIN_WATCH_INTERVAL || watchInterval > MAX_WATCH_INTERVAL) {
+            throw new IllegalArgumentException(
+                    "Invalid watch interval: " + watchInterval +
+                            ". Must be between " + MIN_WATCH_INTERVAL + " and " + MAX_WATCH_INTERVAL +
+                            " (0 disables file watching)"
+            );
+        }
     }
 
     /**
@@ -237,6 +252,16 @@ public final class ProxySettings {
                 }
                 case "-v", "--verbose" -> settings.verbose = true;
                 case "-l", "--log" -> settings.logToFile = true;
+                case "-w", "--watch-interval" -> {
+                    if (i + 1 >= args.length) {
+                        throw new IllegalArgumentException("--watch-interval requires a number of seconds (0 to disable)");
+                    }
+                    try {
+                        settings.watchInterval = Integer.parseInt(args[++i]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException("Invalid watch interval: " + args[i]);
+                    }
+                }
                 case "-c", "--config" -> {
                     if (i + 1 >= args.length) {
                         throw new IllegalArgumentException("--config requires a file path");
@@ -277,6 +302,9 @@ public final class ProxySettings {
 				+ ")");
 		System.out.println("  -v, --verbose                       Enable INFO console output (WARNING always shown)");
 		System.out.println("  -l, --log                           Enable file logging");
+		System.out.println("  -w, --watch-interval <secs>         Config reload debounce seconds (default: "
+				+ DEFAULT_WATCH_INTERVAL + ", range: " + MIN_WATCH_INTERVAL + "-" + MAX_WATCH_INTERVAL
+				+ ", 0=disable)");
 		System.out.println("  -c, --config <path>                 Config file path (default: llm-proxy.toml)");
 		System.out.println("  -h, --help                          Show this help message");
 		System.out.println();

@@ -11,12 +11,12 @@ public class LlmProxy extends HttpProxy {
 
     private final ProxySettings settings;
 
-    public LlmProxy(RuntimeConfig runtime, ProxySettings settings) {
+    public LlmProxy(ConfigManager configManager, ProxySettings settings) {
         super(
             settings.port,
             settings.connectionTimeout,
             settings.requestTimeout,
-            new ModelRequestRouter(runtime, settings)
+            new ModelRequestRouter(configManager, settings)
         );
         this.settings = settings;
     }
@@ -43,14 +43,25 @@ public class LlmProxy extends HttpProxy {
             System.exit(1);
         }
 
+        // Create config manager for hot reload support
+        ConfigManager configManager = new ConfigManager(runtime, settings.configFile);
+
         // Initialize models manager with settings
         if (!ModelsManager.initialize(runtime, settings)) {
             Logger.error("Failed to initialize models");
             System.exit(1);
         }
 
-        LlmProxy proxy = new LlmProxy(runtime, settings);
+        LlmProxy proxy = new LlmProxy(configManager, settings);
         proxy.start();
+
+        // Start config file watcher if enabled (default: 1 second debounce)
+        if (settings.watchInterval > 0) {
+            ConfigWatcher watcher = new ConfigWatcher(settings.configFile, configManager, settings.watchInterval);
+            Thread watcherThread = new Thread(watcher, "config-watcher");
+            watcherThread.setDaemon(true);
+            watcherThread.start();
+        }
 
         Logger.info("Proxy server running on port " + settings.port);
     }

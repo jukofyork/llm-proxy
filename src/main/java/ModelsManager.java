@@ -100,6 +100,18 @@ public class ModelsManager {
     }
 
     /**
+     * Triggers a synchronous refresh of the model registry.
+     * Called by ConfigWatcher after successful configuration reload.
+     *
+     * @param runtime the updated runtime configuration
+     */
+    public static void refreshModels(RuntimeConfig runtime) {
+        runtimeConfig = runtime;
+        Logger.info("Triggering model registry refresh due to configuration change...");
+        refreshRegisteredModelsSync();
+    }
+
+    /**
      * Validates that a request path is compatible with the model's endpoint.
      * Checks for mismatches where endpoint ends with /v1 but request path doesn't start with /v1.
      *

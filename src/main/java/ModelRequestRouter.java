@@ -13,17 +13,19 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 public class ModelRequestRouter implements HttpProxy.RequestRouter {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
+    private final ConfigManager configManager;
     private final RouteResolver resolver;
     private final ProxySettings settings;
 
     /**
      * Creates a new model request router.
      *
-     * @param runtime the runtime configuration containing server and profile definitions
+     * @param configManager the configuration manager for accessing current runtime config
      * @param settings the proxy settings for logging and other behaviors
      */
-    public ModelRequestRouter(RuntimeConfig runtime, ProxySettings settings) {
-        this.resolver = new RouteResolver(runtime);
+    public ModelRequestRouter(ConfigManager configManager, ProxySettings settings) {
+        this.configManager = configManager;
+        this.resolver = new RouteResolver();
         this.settings = settings;
     }
 
@@ -45,7 +47,8 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
             return null;
         }
 
-        RouteTarget target = resolver.resolve(modelName);
+        RuntimeConfig runtime = configManager.get();
+        RouteTarget target = resolver.resolve(runtime, modelName);
         if (target == null) {
             Logger.warning("Model '" + modelName + "' not found");
             return null;

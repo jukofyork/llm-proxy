@@ -10,26 +10,16 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public class RouteResolver {
 
-    private final RuntimeConfig runtime;
-
-    /**
-     * Creates a new route resolver with the given runtime configuration.
-     *
-     * @param runtime the runtime configuration containing compiled server and profile definitions
-     */
-    public RouteResolver(RuntimeConfig runtime) {
-        this.runtime = runtime;
-    }
-
     /**
      * Resolves a requested model name into routing details.
      * Handles virtual profiles (suffix-based), combines server and profile-level
      * deny lists, defaults, overrides, and default messages.
      *
+     * @param runtime the runtime configuration snapshot to use for resolution
      * @param requestedModel the model identifier from the request (may include profile suffix)
      * @return route target with resolved endpoint and transformation rules, or null if not found
      */
-    public RouteTarget resolve(String requestedModel) {
+    public RouteTarget resolve(RuntimeConfig runtime, String requestedModel) {
         ModelsManager.ModelConfig modelCfg = ModelsManager.getModelConfig(requestedModel);
         if (modelCfg == null) {
             return null;
