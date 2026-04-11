@@ -25,7 +25,7 @@ public class RouteResolver {
             return null;
         }
 
-        RuntimeConfig.CompiledServer server = findServerByEndpoint(modelCfg.endpoint());
+        RuntimeConfig.CompiledServer server = findServerByEndpoint(runtime, modelCfg.endpoint());
         if (server == null) {
             Logger.warning("No server config found for endpoint: " + modelCfg.endpoint());
             return new RouteTarget(
@@ -105,7 +105,7 @@ public class RouteResolver {
         );
     }
 
-    private RuntimeConfig.CompiledServer findServerByEndpoint(String endpoint) {
+    private RuntimeConfig.CompiledServer findServerByEndpoint(RuntimeConfig runtime, String endpoint) {
         for (RuntimeConfig.CompiledServer s : runtime.serversByName.values()) {
             if (s.endpoint.equals(endpoint)) {
                 return s;
