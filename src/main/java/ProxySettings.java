@@ -9,24 +9,29 @@ public final class ProxySettings {
     // Port configuration
     public static final int MIN_PORT = 1024;
     public static final int MAX_PORT = 65535;
-    public int port = 3000;
+    public static final int DEFAULT_PORT = 3000;
+    public int port = DEFAULT_PORT;
 
     // Timeout configurations
     public static final Duration MIN_CONNECTION_TIMEOUT = Duration.ofSeconds(1);
-    public static final Duration MAX_CONNECTION_TIMEOUT = Duration.ofMinutes(5);
-    public Duration connectionTimeout = Duration.ofSeconds(10);
+    public static final Duration MAX_CONNECTION_TIMEOUT = Duration.ofSeconds(10);
+    public static final Duration DEFAULT_CONNECTION_TIMEOUT = Duration.ofSeconds(2);
+    public Duration connectionTimeout = DEFAULT_CONNECTION_TIMEOUT;
 
-    public static final Duration MIN_REQUEST_TIMEOUT = Duration.ofSeconds(10);
+    public static final Duration MIN_REQUEST_TIMEOUT = Duration.ofMinutes(1);
     public static final Duration MAX_REQUEST_TIMEOUT = Duration.ofHours(24);
-    public Duration requestTimeout = Duration.ofHours(1);
+    public static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofHours(1);
+    public Duration requestTimeout = DEFAULT_REQUEST_TIMEOUT;
 
     public static final Duration MIN_MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(1);
-    public static final Duration MAX_MODEL_REQUEST_TIMEOUT = Duration.ofMinutes(2);
-    public Duration modelRequestTimeout = Duration.ofSeconds(5);
+    public static final Duration MAX_MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(10);
+    public static final Duration DEFAULT_MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(5);
+    public Duration modelRequestTimeout = DEFAULT_MODEL_REQUEST_TIMEOUT;
 
-    public static final Duration MIN_MODEL_REFRESH_INTERVAL = Duration.ofSeconds(10);
-    public static final Duration MAX_MODEL_REFRESH_INTERVAL = Duration.ofHours(1);
-    public Duration modelRefreshInterval = Duration.ofMinutes(5);
+    public static final Duration MIN_MODEL_REFRESH_INTERVAL = Duration.ofMinutes(1);
+    public static final Duration MAX_MODEL_REFRESH_INTERVAL = Duration.ofHours(24);
+    public static final Duration DEFAULT_MODEL_REFRESH_INTERVAL = Duration.ofMinutes(15);
+    public Duration modelRefreshInterval = DEFAULT_MODEL_REFRESH_INTERVAL;
 
     // Logging configuration
     public boolean verbose = false;
@@ -39,7 +44,7 @@ public final class ProxySettings {
     private ProxySettings() {}
 
     /**
-     * Parses duration from string format (e.g., "500ms", "2s", "3m", "4h").
+     * Parses duration from string format (e.g., "2s", "3m", "4h").
      * Bare integers are treated as seconds.
      *
      * @param input the duration string
@@ -72,7 +77,7 @@ public final class ProxySettings {
 
         if (suffixStart <= 0 || suffixStart >= input.length()) {
             throw new IllegalArgumentException(
-                    "Invalid duration format: '" + input + "'. Use format: 500ms, 10s, 5m, 1h"
+                    "Invalid duration format: '" + input + "'. Use format: 10s, 5m, 1h"
             );
         }
 
@@ -81,17 +86,16 @@ public final class ProxySettings {
             String suffix = input.substring(suffixStart);
 
             return switch (suffix) {
-                case "ms" -> Duration.ofMillis(value);
                 case "s" -> Duration.ofSeconds(value);
                 case "m" -> Duration.ofMinutes(value);
                 case "h" -> Duration.ofHours(value);
                 default -> throw new IllegalArgumentException(
-                        "Invalid duration suffix: '" + suffix + "'. Use: ms, s, m, h"
+                        "Invalid duration suffix: '" + suffix + "'. Use: s, m, h"
                 );
             };
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
-                    "Invalid duration format: '" + input + "'. Use format: 500ms, 10s, 5m, 1h"
+                    "Invalid duration format: '" + input + "'. Use format: 10s, 5m, 1h"
             );
         }
     }
@@ -170,9 +174,7 @@ public final class ProxySettings {
      * Formats a duration for display.
      */
     private static String formatDuration(Duration d) {
-        if (d.toMillis() < 1000) {
-            return d.toMillis() + "ms";
-        } else if (d.getSeconds() < 60) {
+        if (d.getSeconds() < 60) {
             return d.getSeconds() + "s";
         } else if (d.toMinutes() < 60) {
             return d.toMinutes() + "m";
@@ -252,32 +254,41 @@ public final class ProxySettings {
     /**
      * Prints help text with usage information.
      */
-    private static void printHelp() {
-        System.out.println("LLM Proxy - OpenAI-compatible API proxy");
-        System.out.println();
-        System.out.println("Usage: java -jar llm-proxy.jar [OPTIONS]");
-        System.out.println();
-        System.out.println("Options:");
-        System.out.println("  -p, --port <num>                    Port to listen on (default: 3000, range: 1024-65535)");
-        System.out.println("  -t, --connection-timeout <dur>      Connection timeout (default: 10s, min: 1s, max: 5m)");
-        System.out.println("  -r, --request-timeout <dur>         Request timeout (default: 1h, min: 10s, max: 24h)");
-        System.out.println("  -m, --model-request-timeout <dur>   Model discovery timeout (default: 5s, min: 1s, max: 2m)");
-        System.out.println("  -i, --model-refresh-interval <dur>  Model list refresh interval (default: 5m, min: 10s, max: 1h)");
-        System.out.println("  -v, --verbose                       Enable INFO console output (WARNING always shown)");
-        System.out.println("  -l, --log                           Enable file logging");
-        System.out.println("  -c, --config <path>                 Config file path (default: llm-proxy.toml)");
-        System.out.println("  -h, --help                          Show this help message");
-        System.out.println();
-        System.out.println("Duration format:");
-        System.out.println("  500ms  = 500 milliseconds");
-        System.out.println("  10s    = 10 seconds");
-        System.out.println("  5m     = 5 minutes");
-        System.out.println("  1h     = 1 hour");
-        System.out.println("  10     = 10 seconds (bare integer)");
-        System.out.println();
-        System.out.println("Examples:");
-        System.out.println("  ./run.sh -p 8080 -v");
-        System.out.println("  ./run.sh -i 10m -l");
-        System.out.println("  ./run.sh -t 5s -r 30m -c my-config.toml");
-    }
+	private static void printHelp() {
+		System.out.println("LLM Proxy - OpenAI-compatible API proxy");
+		System.out.println();
+		System.out.println("Usage: java -jar llm-proxy.jar [OPTIONS]");
+		System.out.println();
+		System.out.println("Options:");
+		System.out.println("  -p, --port <num>                    Port to listen on (default: " + DEFAULT_PORT
+				+ ", range: " + MIN_PORT + "-" + MAX_PORT + ")");
+		System.out.println("  -t, --connection-timeout <dur>      Connection timeout (default: "
+				+ formatDuration(DEFAULT_CONNECTION_TIMEOUT) + ", min: " + formatDuration(MIN_CONNECTION_TIMEOUT)
+				+ ", max: " + formatDuration(MAX_CONNECTION_TIMEOUT) + ")");
+		System.out.println("  -r, --request-timeout <dur>         Request timeout (default: "
+				+ formatDuration(DEFAULT_REQUEST_TIMEOUT) + ", min: " + formatDuration(MIN_REQUEST_TIMEOUT) + ", max: "
+				+ formatDuration(MAX_REQUEST_TIMEOUT) + ")");
+		System.out.println("  -m, --model-request-timeout <dur>   Model discovery timeout (default: "
+				+ formatDuration(DEFAULT_MODEL_REQUEST_TIMEOUT) + ", min: " + formatDuration(MIN_MODEL_REQUEST_TIMEOUT)
+				+ ", max: " + formatDuration(MAX_MODEL_REQUEST_TIMEOUT) + ")");
+		System.out.println("  -i, --model-refresh-interval <dur>  Model list refresh interval (default: "
+				+ formatDuration(DEFAULT_MODEL_REFRESH_INTERVAL) + ", min: "
+				+ formatDuration(MIN_MODEL_REFRESH_INTERVAL) + ", max: " + formatDuration(MAX_MODEL_REFRESH_INTERVAL)
+				+ ")");
+		System.out.println("  -v, --verbose                       Enable INFO console output (WARNING always shown)");
+		System.out.println("  -l, --log                           Enable file logging");
+		System.out.println("  -c, --config <path>                 Config file path (default: llm-proxy.toml)");
+		System.out.println("  -h, --help                          Show this help message");
+		System.out.println();
+		System.out.println("Duration format:");
+		System.out.println("  10s    = 10 seconds");
+		System.out.println("  5m     = 5 minutes");
+		System.out.println("  1h     = 1 hour");
+		System.out.println("  10     = 10 seconds (bare integer)");
+		System.out.println();
+		System.out.println("Examples:");
+		System.out.println("  ./run.sh -p 8080 -v");
+		System.out.println("  ./run.sh -i 10m -l");
+		System.out.println("  ./run.sh -t 5s -r 30m -c my-config.toml");
+	}
 }
