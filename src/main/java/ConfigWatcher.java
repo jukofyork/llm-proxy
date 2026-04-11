@@ -50,18 +50,26 @@ public class ConfigWatcher implements Runnable {
     @Override
     public void run() {
         try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
-            watchDir.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY);
+            watchDir.register(watchService,
+                    StandardWatchEventKinds.ENTRY_CREATE,
+                    StandardWatchEventKinds.ENTRY_DELETE,
+                    StandardWatchEventKinds.ENTRY_MODIFY);
             Logger.info("Started watching configuration file: " + configFileName);
 
             while (!Thread.interrupted()) {
                 WatchKey key = watchService.take();
 
                 for (WatchEvent<?> event : key.pollEvents()) {
-                    if (event.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
-                        Path changed = (Path) event.context();
-                        if (changed.toString().equals(configFileName)) {
-                            debounceReload();
-                        }
+                    WatchEvent.Kind<?> kind = event.kind();
+
+                    if (kind == StandardWatchEventKinds.OVERFLOW) {
+                        debounceReload();
+                        continue;
+                    }
+
+                    Path changed = (Path) event.context();
+                    if (changed.toString().equals(configFileName)) {
+                        debounceReload();
                     }
                 }
 
