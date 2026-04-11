@@ -26,9 +26,18 @@ public class ConfigWatcher implements Runnable {
      * @param debounceSeconds the debounce interval in seconds
      */
     public ConfigWatcher(String configPath, ConfigManager configManager, int debounceSeconds) {
-        Path fullPath = Path.of(configPath).toAbsolutePath();
-        this.watchDir = fullPath.getParent();
-        this.configFileName = fullPath.getFileName().toString();
+        try {
+            Path fullPath = Path.of(configPath).toAbsolutePath();
+            // Resolve symlinks to watch the actual file, not the symlink entry
+            if (Files.isSymbolicLink(fullPath)) {
+                fullPath = fullPath.toRealPath();
+                Logger.info("Resolved symlink to real path: " + fullPath);
+            }
+            this.watchDir = fullPath.getParent();
+            this.configFileName = fullPath.getFileName().toString();
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Invalid config path: " + configPath, e);
+        }
         this.configManager = configManager;
         this.debounceSeconds = debounceSeconds;
         this.debounceExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
