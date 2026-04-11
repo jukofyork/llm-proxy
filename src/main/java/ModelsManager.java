@@ -198,7 +198,7 @@ public class ModelsManager {
         for (String path : endpointPaths) {
             String url = baseUrl + path;
             URI uri = URI.create(url);
-            HttpResponse<InputStream> response = httpClient.sendRequest(uri, apiKey, null, false);
+            HttpResponse<InputStream> response = httpClient.sendRequest(uri, apiKey, null, false).get();
             int statusCode = response.statusCode();
             
             if (statusCode == 200) {
