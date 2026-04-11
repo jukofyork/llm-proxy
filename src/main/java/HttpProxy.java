@@ -4,6 +4,7 @@ import java.net.URI;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -21,7 +22,7 @@ public class HttpProxy implements HttpHandler {
     public interface RequestRouter {
         /**
          * Determines the target URI and API key for a given request.
-         * 
+         *
          * @param method HTTP method
          * @param path Request path
          * @param body Request body
@@ -83,21 +84,24 @@ public class HttpProxy implements HttpHandler {
             String path = exchange.getRequestURI().getPath();
             String body = HttpServerWrapper.readRequestBody(exchange);
             Map<String, String> headers = convertHeaders(exchange);
-    
+
             ProxyTarget target = router.route(method, path, body, headers);
             if (target == null) {
-                HttpServerWrapper.sendResponse(exchange, 400, "application/json", 
+                HttpServerWrapper.sendResponse(exchange, 400, "application/json",
                     "{\"error\":{\"message\":\"Bad Request\",\"type\":\"invalid_request_error\"}}");
                 return;
             }
-    
+
             // Use transformed body from router if available, otherwise fall back to original request body
             // This enables parameter filtering, overrides, and other request transformations
             proxyRequest(exchange, target, target.body() != null ? target.body() : body);
-    
+
         } catch (Exception e) {
-            HttpServerWrapper.sendResponse(exchange, 500, "application/json",
-                "{\"error\":{\"message\":\"Internal Server Error\",\"type\":\"server_error\"}}");
+            // Don't send error response if client already disconnected
+            if (!isClientDisconnect(e)) {
+                HttpServerWrapper.sendResponse(exchange, 500, "application/json",
+                    "{\"error\":{\"message\":\"Internal Server Error\",\"type\":\"server_error\"}}");
+            }
         }
     }
 
@@ -105,28 +109,81 @@ public class HttpProxy implements HttpHandler {
      * Proxies the request to the target backend server.
      */
     private void proxyRequest(HttpExchange exchange, ProxyTarget target, String body) throws IOException {
-        HttpResponse<InputStream> response = clientWrapper.sendRequest(
-            target.uri(), 
-            target.apiKey(), 
-            body, 
+        // Start async request to backend
+        CompletableFuture<HttpResponse<InputStream>> future = clientWrapper.sendRequest(
+            target.uri(),
+            target.apiKey(),
+            body,
             target.isStreaming()
         );
-        
-        if (target.isStreaming()) {
-            HttpServerWrapper.sendStreamingResponse(exchange, response.body());
-        } else {
-            // Read the entire response body for non-streaming
-            try (InputStream responseStream = response.body()) {
-                String responseBody = new String(responseStream.readAllBytes());
-                
-                // Forward the backend content type if present, default to application/json
-                String contentType = response.headers()
-                    .firstValue("content-type")
-                    .orElse("application/json");
-                
-                HttpServerWrapper.sendResponse(exchange, response.statusCode(), contentType, responseBody);
+
+        try {
+            // Wait for response
+            HttpResponse<InputStream> response = future.get();
+
+            if (target.isStreaming()) {
+                try {
+                    HttpServerWrapper.sendStreamingResponse(exchange, response.body());
+                } catch (HttpServerWrapper.ClientDisconnectException e) {
+                    // Client disconnected, cancel the backend request
+                    future.cancel(true);
+                    Logger.warning("Client disconnected during streaming, cancelled backend request");
+                }
+            } else {
+                // Read the entire response body for non-streaming
+                try {
+                    String responseBody = new String(response.body().readAllBytes());
+
+                    // Forward the backend content type if present, default to application/json
+                    String contentType = response.headers()
+                        .firstValue("content-type")
+                        .orElse("application/json");
+
+                    try {
+                        HttpServerWrapper.sendResponse(exchange, response.statusCode(), contentType, responseBody);
+                    } catch (HttpServerWrapper.ClientDisconnectException e) {
+                        // Client disconnected, cancel the backend request
+                        future.cancel(true);
+                        Logger.warning("Client disconnected during response, cancelled backend request");
+                    }
+                } finally {
+                    response.body().close();
+                }
+            }
+        } catch (Exception e) {
+            // Cancel the future on any error
+            future.cancel(true);
+
+            // If it's not a client disconnect, rethrow as IOException
+            if (!isClientDisconnect(e)) {
+                throw new IOException("Failed to proxy request", e);
             }
         }
+    }
+
+    /**
+     * Checks if an exception indicates a client disconnect.
+     *
+     * @param e The exception to check
+     * @return true if the exception indicates a client disconnect
+     */
+    private boolean isClientDisconnect(Exception e) {
+        if (e instanceof HttpServerWrapper.ClientDisconnectException) {
+            return true;
+        }
+        if (e.getCause() instanceof HttpServerWrapper.ClientDisconnectException) {
+            return true;
+        }
+        if (e instanceof IOException) {
+            String message = e.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                return lower.contains("broken pipe") ||
+                       lower.contains("connection reset") ||
+                       lower.contains("connection abort");
+            }
+        }
+        return false;
     }
 
     /**

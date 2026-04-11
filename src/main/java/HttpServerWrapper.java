@@ -18,10 +18,20 @@ import com.sun.net.httpserver.HttpServer;
  * A wrapper around {@link HttpServer} that provides simplified HTTP server management
  * for handling incoming requests. Manages server lifecycle, request/response handling,
  * and connection management.
- * 
+ *
  * @see com.sun.net.httpserver.HttpServer
  */
 public class HttpServerWrapper {
+
+    /**
+     * Exception thrown when the client disconnects during response transmission.
+     * This is a normal occurrence and should be handled gracefully.
+     */
+    public static class ClientDisconnectException extends IOException {
+        public ClientDisconnectException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
 
     private HttpServer httpServer;
     private ExecutorService executor;
@@ -46,7 +56,7 @@ public class HttpServerWrapper {
         try {
             httpServer = HttpServer.create(new InetSocketAddress(port), 0); // 0 = Use system default backlog
             httpServer.createContext("/", handler);
-            
+
             // Create a thread pool for handling concurrent requests
             executor = Executors.newCachedThreadPool(r -> {
                 Thread t = new Thread(r);
@@ -55,7 +65,7 @@ public class HttpServerWrapper {
                 return t;
             });
             httpServer.setExecutor(executor);
-            
+
             httpServer.start();
         } catch (Exception e) {
             throw new IOException("Failed to start server on port " + port, e);
@@ -76,7 +86,7 @@ public class HttpServerWrapper {
                 throw new IOException("Failed to stop server", e);
             }
         }
-        
+
         if (executor != null) {
             executor.shutdown();
             try {
@@ -120,11 +130,14 @@ public class HttpServerWrapper {
             exchange.getResponseHeaders().set("Content-Type", contentType);
             byte[] responseBytes = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statusCode, responseBytes.length);
-            
+
             try (OutputStream output = exchange.getResponseBody()) {
                 output.write(responseBytes);
             }
         } catch (Exception e) {
+            if (isClientDisconnect(e)) {
+                throw new ClientDisconnectException("Client disconnected", e);
+            }
             throw new IOException("Failed to send response", e);
         }
     }
@@ -135,6 +148,7 @@ public class HttpServerWrapper {
      * @param exchange The HTTP exchange
      * @param responseStream The input stream to copy to the response
      * @throws IOException If sending the streaming response fails
+     * @throws ClientDisconnectException If the client disconnects during streaming
      */
     public static void sendStreamingResponse(HttpExchange exchange, InputStream responseStream) throws IOException {
         try {
@@ -142,7 +156,7 @@ public class HttpServerWrapper {
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
             exchange.getResponseHeaders().set("Connection", "keep-alive");
             exchange.sendResponseHeaders(200, 0); // 0 means chunked encoding
-            
+
             try (OutputStream output = exchange.getResponseBody(); InputStream input = responseStream) {
                 byte[] buffer = new byte[8192];
                 int bytesRead;
@@ -151,8 +165,31 @@ public class HttpServerWrapper {
                     output.flush();
                 }
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
+            if (isClientDisconnect(e)) {
+                throw new ClientDisconnectException("Client disconnected during streaming", e);
+            }
             throw new IOException("Failed to send streaming response", e);
         }
     }
+
+    /**
+     * Checks if an exception indicates a client disconnect.
+     *
+     * @param e The exception to check
+     * @return true if the exception indicates a client disconnect
+     */
+    private static boolean isClientDisconnect(Exception e) {
+        if (e instanceof IOException) {
+            String message = e.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                return lower.contains("broken pipe") ||
+                       lower.contains("connection reset") ||
+                       lower.contains("connection abort");
+            }
+        }
+        return false;
+    }
+
 }
