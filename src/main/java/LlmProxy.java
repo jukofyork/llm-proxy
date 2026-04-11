@@ -9,38 +9,57 @@ import com.sun.net.httpserver.HttpExchange;
  */
 public class LlmProxy extends HttpProxy {
 
-    public LlmProxy(RuntimeConfig runtime) {
+    private final ProxySettings settings;
+
+    public LlmProxy(RuntimeConfig runtime, ProxySettings settings) {
         super(
-            Constants.PROXY_PORT,
-            Constants.CONNECTION_TIMEOUT,
-            Constants.REQUEST_TIMEOUT,
-            new ModelRequestRouter(runtime)
+            settings.port,
+            settings.connectionTimeout,
+            settings.requestTimeout,
+            new ModelRequestRouter(runtime, settings)
         );
+        this.settings = settings;
     }
 
     public static void main(String[] args) throws Exception {
-        RuntimeConfig runtime = ConfigLoader.load(Constants.CONFIG_FILE);
+        // Parse command-line arguments
+        ProxySettings settings;
+        try {
+            settings = ProxySettings.parseArgs(args);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e.getMessage());
+            System.err.println("Use -h or --help for usage information");
+            System.exit(1);
+            return;
+        }
+
+        // Initialize logger with settings
+        Logger.initialize(settings);
+
+        // Load configuration
+        RuntimeConfig runtime = ConfigLoader.load(settings.configFile);
         if (runtime == null) {
             Logger.error("Failed to initialize configuration");
             System.exit(1);
         }
 
-        if (!ModelsManager.initialize(runtime)) {
+        // Initialize models manager with settings
+        if (!ModelsManager.initialize(runtime, settings)) {
             Logger.error("Failed to initialize models");
             System.exit(1);
         }
 
-        LlmProxy proxy = new LlmProxy(runtime);
+        LlmProxy proxy = new LlmProxy(runtime, settings);
         proxy.start();
 
-        Logger.info("Proxy server running on port " + Constants.PROXY_PORT);
+        Logger.info("Proxy server running on port " + settings.port);
     }
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
         String requestPath = exchange.getRequestURI().getPath();
 
-        if (requestPath.endsWith(Constants.MODELS_ENDPOINT)) {
+        if (requestPath.endsWith("/models")) {
             String modelsPayload = ModelsManager.generateModelsResponse();
             HttpServerWrapper.sendResponse(exchange, 200, "application/json", modelsPayload);
             return;

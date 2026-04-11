@@ -14,9 +14,11 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
     private final RouteResolver resolver;
+    private final ProxySettings settings;
 
-    public ModelRequestRouter(RuntimeConfig runtime) {
+    public ModelRequestRouter(RuntimeConfig runtime, ProxySettings settings) {
         this.resolver = new RouteResolver(runtime);
+        this.settings = settings;
     }
 
     @Override
@@ -50,7 +52,7 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
     }
 
     private String extractRequestedModelName(String path, String body, Map<String, String> headers) {
-        if (!path.startsWith(Constants.V1_PREFIX)) {
+        if (!path.startsWith("/v1")) {
             return null;
         }
         try {
@@ -163,7 +165,7 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
     }
 
     private void logRequestPayloadIfDebug(String requestBody) {
-        if (Constants.DEBUG_REQUEST && requestBody != null && !requestBody.isEmpty()) {
+        if (settings.verbose && requestBody != null && !requestBody.isEmpty()) {
             try {
                 JsonNode jsonNode = JSON_MAPPER.readTree(requestBody);
                 String prettyJson = JSON_MAPPER.writerWithDefaultPrettyPrinter()

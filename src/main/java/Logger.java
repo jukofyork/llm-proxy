@@ -12,14 +12,16 @@ public final class Logger {
 
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    private static ProxySettings settings;
+
     private enum LogLevel {
         INFO("[INFO]", System.out),
         WARNING("[WARNING]", System.err),
         ERROR("[ERROR]", System.err);
-        
+
         private final String prefix;
         private final PrintStream stream;
-        
+
         LogLevel(String prefix, PrintStream stream) {
             this.prefix = prefix;
             this.stream = stream;
@@ -30,6 +32,15 @@ public final class Logger {
      * Private constructor to prevent instantiation of the class.
      */
     private Logger() {
+    }
+
+    /**
+     * Initializes the logger with proxy settings.
+     *
+     * @param proxySettings the settings to use for logging
+     */
+    public static void initialize(ProxySettings proxySettings) {
+        settings = proxySettings;
     }
 
     /**
@@ -81,37 +92,42 @@ public final class Logger {
 
     /**
      * Core logging method that handles all log levels and output.
-     * 
+     *
      * @param level The log level
      * @param message The message to be logged
      * @param exception Optional exception to include
      */
     private static void log(LogLevel level, String message, Exception exception) {
+        // Skip INFO messages if not in verbose mode
+        if (level == LogLevel.INFO && (settings == null || !settings.verbose)) {
+            return;
+        }
+
         String logEntry = level.prefix + " " + message;
         if (exception != null) {
             logEntry += ": " + exception.getMessage();
         }
-        
+
         level.stream.println(logEntry);
         writeToFile(logEntry);
     }
 
     /**
      * Writes a log entry to file if file logging is enabled.
-     * 
+     *
      * @param logEntry The log entry to write to file.
      */
     private static void writeToFile(String logEntry) {
-        if (!Constants.DEBUG_LOG_TO_FILE) {
+        if (settings == null || !settings.logToFile) {
             return;
         }
 
-        try (FileWriter fileWriter = new FileWriter(Constants.LOG_FILE, true);
+        try (FileWriter fileWriter = new FileWriter(settings.logFile, true);
              PrintWriter printWriter = new PrintWriter(fileWriter)) {
-            
+
             String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
             printWriter.println(timestamp + " " + logEntry);
-            
+
         } catch (IOException e) {
             // Avoid infinite recursion by not using Logger.error here
             System.err.println("[ERROR] Failed to write to log file: " + e.getMessage());

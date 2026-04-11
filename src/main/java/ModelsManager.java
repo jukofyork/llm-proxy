@@ -24,14 +24,17 @@ public class ModelsManager {
 
     private static RuntimeConfig runtimeConfig;
 
+    private static ProxySettings settings;
+
     private static Instant lastRefreshTime = Instant.EPOCH;
 
     private static ScheduledExecutorService scheduledExecutor;
 
     private ModelsManager() {}
 
-    public static boolean initialize(RuntimeConfig runtime) {
+    public static boolean initialize(RuntimeConfig runtime, ProxySettings proxySettings) {
         runtimeConfig = runtime;
+        settings = proxySettings;
 
         // Perform initial synchronous fetch before accepting requests
         Logger.info("Initializing model registry...");
@@ -75,15 +78,17 @@ public class ModelsManager {
     }
 
     public static boolean validateModelEndpoint(String requestPath, String modelEndpoint) {
-        if (!requestPath.startsWith(Constants.V1_PREFIX) && modelEndpoint.endsWith(Constants.V1_PREFIX)) {
+        String v1Prefix = "/v1";
+        if (!requestPath.startsWith(v1Prefix) && modelEndpoint.endsWith(v1Prefix)) {
             return false;
         }
         return true;
     }
 
     public static String buildFinalRequestPath(String requestPath, String endpoint) {
-        if (endpoint.endsWith(Constants.V1_PREFIX) && requestPath.startsWith(Constants.V1_PREFIX)) {
-            return requestPath.substring(Constants.V1_PREFIX.length());
+        String v1Prefix = "/v1";
+        if (endpoint.endsWith(v1Prefix) && requestPath.startsWith(v1Prefix)) {
+            return requestPath.substring(v1Prefix.length());
         }
         return requestPath;
     }
@@ -101,17 +106,17 @@ public class ModelsManager {
 
         scheduledExecutor.scheduleAtFixedRate(
                 ModelsManager::refreshRegisteredModelsAsync,
-                Constants.MODEL_REFRESH_TTL.toSeconds(),
-                Constants.MODEL_REFRESH_TTL.toSeconds(),
+                settings.modelRefreshInterval.getSeconds(),
+                settings.modelRefreshInterval.getSeconds(),
                 TimeUnit.SECONDS
         );
 
-        Logger.info("Started periodic model refresh every " + Constants.MODEL_REFRESH_TTL.toSeconds() + " seconds");
+        Logger.info("Started periodic model refresh every " + settings.modelRefreshInterval.getSeconds() + " seconds");
     }
 
     private static void refreshRegisteredModelsAsync() {
         // Async refresh respects TTL - only refresh if TTL expired
-        if (Instant.now().isBefore(lastRefreshTime.plus(Constants.MODEL_REFRESH_TTL))) {
+        if (Instant.now().isBefore(lastRefreshTime.plus(settings.modelRefreshInterval))) {
             return;
         }
 
@@ -126,8 +131,8 @@ public class ModelsManager {
 
         Map<String, ModelConfig> temp = new ConcurrentHashMap<>();
         HttpClientWrapper httpClient = new HttpClientWrapper(
-                Constants.MODEL_CONNECTION_TIMEOUT,
-                Constants.MODEL_REQUEST_TIMEOUT
+                settings.connectionTimeout,
+                settings.modelRequestTimeout
         );
 
         List<CompletableFuture<Void>> tasks = new ArrayList<>();
@@ -168,7 +173,7 @@ public class ModelsManager {
         try {
             CompletableFuture
                     .allOf(tasks.toArray(new CompletableFuture[0]))
-                    .get(Constants.MODEL_REQUEST_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+                    .get(settings.modelRequestTimeout.getSeconds(), TimeUnit.SECONDS);
         } catch (Exception e) {
             Logger.warning("Some model fetches did not complete in time", e);
         }
@@ -186,7 +191,7 @@ public class ModelsManager {
 			throws Exception {
 		
 		// NOTE: We need to try both endpoints, as ik_llama.cpp returns 404 for the "/models" endpoint.
-        String[] endpointPaths = {Constants.MODELS_ENDPOINT, Constants.V1_PREFIX + Constants.MODELS_ENDPOINT};
+        String[] endpointPaths = {"/models", "/v1/models"};
         
         Map<String, Integer> failedAttempts = new LinkedHashMap<>();
         

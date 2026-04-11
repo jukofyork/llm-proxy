@@ -20,7 +20,7 @@ Prerequisites:
 - Maven 3.x
 
 1) Configure
-- Use `examples/config.toml` as a reference and place your config at the path configured by `Constants.CONFIG_FILE` (eg: `config.toml`).
+- Use `examples/config.toml` as a reference and place your config at `llm-proxy.toml` (or specify with `--config`).
 
 2) Build
 - `./compile.sh`
@@ -30,7 +30,7 @@ Prerequisites:
 - Development (Maven Exec): `./run.sh` (runs `mvn exec:java`)
 - From JAR: `./run-jar.sh` (runs `java -jar target/llm-proxy-1.0.0.jar`)
 
-The server listens on the port defined by `Constants.PROXY_PORT` (eg: current default is `3000`).
+The default port is `3000`. Use `--port` to change it.
 
 ---
 
@@ -137,6 +137,46 @@ See the example [config.toml](examples/config.toml) file for more detailed examp
 
 ---
 
+## Command-Line Options
+
+The proxy accepts various command-line options to customize behavior:
+
+```
+-p, --port <num>                    Port to listen on (default: 3000, range: 1024-65535)
+-t, --connection-timeout <dur>      Connection timeout (default: 10s, min: 1s, max: 5m)
+-r, --request-timeout <dur>         Request timeout (default: 1h, min: 10s, max: 24h)
+-m, --model-request-timeout <dur>   Model discovery timeout (default: 5s, min: 1s, max: 2m)
+-i, --model-refresh-interval <dur>  Model list refresh interval (default: 5m, min: 10s, max: 1h)
+-v, --verbose                       Enable INFO console output (WARNING always shown)
+-l, --log                           Enable file logging to llm-proxy.log
+-c, --config <path>                 Config file path (default: llm-proxy.toml)
+-h, --help                          Show help message
+```
+
+### Duration Format
+
+Durations can be specified as:
+- `500ms` - milliseconds
+- `10s` - seconds
+- `5m` - minutes
+- `1h` - hours
+- `10` - bare integers are treated as seconds
+
+### Examples
+
+```bash
+# Run on port 8080 with verbose output
+java -jar target/llm-proxy-1.0.0.jar -p 8080 -v
+
+# Custom timeouts and refresh interval
+java -jar target/llm-proxy-1.0.0.jar -t 5s -r 30m -i 10m
+
+# Use custom config file with file logging
+java -jar target/llm-proxy-1.0.0.jar -c my-config.toml -l
+```
+
+---
+
 ## Helper Scripts
 
 - Build:
@@ -150,13 +190,14 @@ See the example [config.toml](examples/config.toml) file for more detailed examp
 
 ## Troubleshooting
 
-- Ensure `config.toml` (or whatever `Constants.CONFIG_FILE` points to) is readable and follows the schema
+- Ensure `llm-proxy.toml` (or your config file specified with `--config`) is readable and follows the schema
 - If models aren't visible in `/v1/models`:
   - Check allow-lists (`models`)
   - Check `hide_base_models`
   - Verify the backend supports `/v1/models` and returns expected data
   - For hidden models (prefixed with `*`), ensure the `*` is present in the config and the full model name is correct
-- Enable `Constants.DEBUG_REQUEST` to log transformed requests (be mindful of sensitive data)
+- Use `--verbose` or `-v` to log transformed requests (be mindful of sensitive data)
+- Check `llm-proxy.log` for detailed logs (if `--log` or `-l` was used)
 
 ---
 
