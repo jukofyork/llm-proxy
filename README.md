@@ -20,7 +20,7 @@ Prerequisites:
 - Maven 3.x
 
 1) Configure
-- Use `examples/config.toml` as a reference and place your config at `llm-proxy.toml` (or specify with `--config`).
+- Use `examples/config.toml` as a reference and place your config at `llm-proxy.toml` (or specify with `-c`).
 
 2) Build
 - `./compile.sh`
@@ -30,7 +30,7 @@ Prerequisites:
 - Development (Maven Exec): `./run.sh` (runs `mvn exec:java`)
 - From JAR: `./run-jar.sh` (runs `java -jar target/llm-proxy-1.0.0.jar`)
 
-The default port is `3000`. Use `--port` to change it.
+The default port is `3000`. Use `-p` to change it.
 
 ---
 
@@ -143,10 +143,10 @@ The proxy accepts various command-line options to customize behavior:
 
 ```
 -p, --port <num>                    Port to listen on (default: 3000, range: 1024-65535)
--t, --connection-timeout <dur>      Connection timeout (default: 10s, min: 1s, max: 5m)
--r, --request-timeout <dur>         Request timeout (default: 1h, min: 10s, max: 24h)
--m, --model-request-timeout <dur>   Model discovery timeout (default: 5s, min: 1s, max: 2m)
--i, --model-refresh-interval <dur>  Model list refresh interval (default: 5m, min: 10s, max: 1h)
+-t, --connection-timeout <dur>      Connection timeout (default: 2s, min: 1s, max: 10s)
+-r, --request-timeout <dur>         Request timeout (default: 1h, min: 1m, max: 24h)
+-m, --model-request-timeout <dur>   Model discovery timeout (default: 5s, min: 1s, max: 10s)
+-i, --model-refresh-interval <dur>  Model list refresh interval (default: 15m, min: 1m, max: 24h)
 -v, --verbose                       Enable INFO console output (WARNING always shown)
 -l, --log                           Enable file logging to llm-proxy.log
 -c, --config <path>                 Config file path (default: llm-proxy.toml)
@@ -180,24 +180,24 @@ java -jar target/llm-proxy-1.0.0.jar -c my-config.toml -l
 ## Helper Scripts
 
 - Build:
-  - `./compile.sh` → `mvn compile && mvn package`
+  - `./compile.sh` → runs `mvn compile` then `mvn package`
 - Run (dev):
   - `./run.sh` → `mvn exec:java`
 - Run JAR:
-  - `./run-jar.sh` → `java -jar target/llm-proxy-1.0.0.jar`
+  - `./run-jar.sh` → `java -jar target/llm-proxy-1.0.0.jar "$@"` (passes arguments to JAR)
 
 ---
 
 ## Troubleshooting
 
-- Ensure `llm-proxy.toml` (or your config file specified with `--config`) is readable and follows the schema
+- Ensure `llm-proxy.toml` (or your config file specified with `-c`) is readable and follows the schema
 - If models aren't visible in `/v1/models`:
   - Check allow-lists (`models`)
   - Check `hide_base_models`
   - Verify the backend supports `/v1/models` and returns expected data
   - For hidden models (prefixed with `*`), ensure the `*` is present in the config and the full model name is correct
-- Use `--verbose` or `-v` to log transformed requests (be mindful of sensitive data)
-- Check `llm-proxy.log` for detailed logs (if `--log` or `-l` was used)
+- Use `-v` or `--verbose` to log transformed requests (be mindful of sensitive data)
+- Check `llm-proxy.log` for detailed logs (if `-l` or `--log` was used)
 
 ---
 

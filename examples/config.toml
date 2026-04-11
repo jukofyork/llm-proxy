@@ -1,12 +1,13 @@
 # Minimal configuration demonstrating:
 # - Bearer auth via api_key
-# - Model allow-list
+# - Model allow-list (including hidden models via * prefix)
 # - Defaults (applied if missing) and deny policy
 # - Virtual profiles (suffix-based) with overrides
 # - Hiding base models (only expose profile-suffixed models)
 # - Default system/developer message upsert (added if missing)
 # - Multi-node setups declared as separate servers (one endpoint each)
 # - Local servers without auth
+# - llama.cpp kwargs (chat_template_kwargs) for thinking mode control
 
 # OpenAI: hide base models; only expose profile-suffixed variants (e.g., gpt-4-fast, o1-preview-high)
 [OpenAI]
@@ -71,3 +72,26 @@ overrides = { temperature = 0.8, top_p = 0.95 }
 endpoint = "http://192.168.1.100:8081"
 defaults = { stream = true, top_p = 0.9 }
 deny = ["/top_k", "/repetition_penalty"]
+
+# Fireworks with hidden model: models prefixed with * bypass the backend's /v1/models list
+# Useful for Fireworks "Fire Pass" models that don't appear in the standard model list
+[Fireworks-KIMI-K25-TURBO]
+endpoint = "https://api.fireworks.ai/inference/v1"
+api_key = "fw_xxx"
+models = [ "*accounts/fireworks/routers/kimi-k2p5-turbo" ]
+overrides = { reasoning_effort = 'none' }
+deny = ["/temperature"]
+
+[Fireworks-KIMI-K25-TURBO.thinking]
+overrides = { reasoning_effort = 'high' }
+
+# llama.cpp server with chat_template_kwargs: send kwargs to control thinking behavior
+# Useful for models like Kimi K2.5 that support thinking/nothinking via chat template
+[SERVER-Z-KIMI-K25-8080]
+endpoint = "http://192.168.1.115:8080"
+defaults = { temperature = 0.6, top_p = 0.95 }
+overrides = { chat_template_kwargs = {thinking = false} }
+
+[SERVER-Z-KIMI-K25-8080.thinking]
+defaults = { temperature = 1.0 }
+overrides = { chat_template_kwargs = {thinking = true} }

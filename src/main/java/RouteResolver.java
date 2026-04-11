@@ -12,10 +12,23 @@ public class RouteResolver {
 
     private final RuntimeConfig runtime;
 
+    /**
+     * Creates a new route resolver with the given runtime configuration.
+     *
+     * @param runtime the runtime configuration containing compiled server and profile definitions
+     */
     public RouteResolver(RuntimeConfig runtime) {
         this.runtime = runtime;
     }
 
+    /**
+     * Resolves a requested model name into routing details.
+     * Handles virtual profiles (suffix-based), combines server and profile-level
+     * deny lists, defaults, overrides, and default messages.
+     *
+     * @param requestedModel the model identifier from the request (may include profile suffix)
+     * @return route target with resolved endpoint and transformation rules, or null if not found
+     */
     public RouteTarget resolve(String requestedModel) {
         ModelsManager.ModelConfig modelCfg = ModelsManager.getModelConfig(requestedModel);
         if (modelCfg == null) {
@@ -40,7 +53,9 @@ public class RouteResolver {
 
         String chosenEndpoint = server.endpoint;
 
-        // Detect virtual profile by suffix
+        // Virtual profile detection: model names ending in "-<suffix>" are virtual.
+        // The suffix identifies which profile to apply, and the base model name is extracted
+        // by stripping the suffix. Example: "gpt-4-fast" -> base="gpt-4", profile="fast"
         String baseModelName = requestedModel;
         boolean isVirtual = false;
         RuntimeConfig.CompiledProfile profile = null;
@@ -54,25 +69,26 @@ public class RouteResolver {
             }
         }
 
+        // Merge rules: profile settings override server settings
         // Combine deny (server + profile)
         List<String> deny = new ArrayList<>(server.denyParamPointers);
         if (profile != null && profile.deny != null && !profile.deny.isEmpty()) {
             deny.addAll(profile.deny);
         }
 
-        // Combine defaults (server then profile)
+        // Apply profile defaults on top of server defaults
         ObjectNode mergedDefaults = deepCopy(server.paramDefaults);
         if (profile != null) {
             JsonTransform.applyOverrides(mergedDefaults, profile.defaults);
         }
 
-        // Combine overrides (server then profile)
+        // Apply profile overrides on top of server overrides
         ObjectNode mergedOverrides = deepCopy(server.paramOverrides);
         if (profile != null) {
             JsonTransform.applyOverrides(mergedOverrides, profile.overrides);
         }
 
-        // Resolve default messages (profile overrides server if present)
+        // Default messages: profile values take precedence over server values
         String effectiveSystemMessage = server.defaultSystemMessage;
         String effectiveDeveloperMessage = server.defaultDeveloperMessage;
         if (profile != null) {

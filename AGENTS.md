@@ -104,9 +104,9 @@ mvn test -Dtest=ClassName#methodName
 ## Project-Specific Patterns
 
 ### Configuration
-- Constants in `Constants.java` (no instantiation)
+- Settings managed via `ProxySettings` class
+- Config file location: `llm-proxy.toml` (default, can be overridden with `-c`)
 - Runtime config loaded via `ConfigLoader`
-- TOML configuration file location set by `Constants.CONFIG_FILE`
 
 ### HTTP Handling
 - Use `HttpServerWrapper` for incoming requests
@@ -121,7 +121,8 @@ mvn test -Dtest=ClassName#methodName
 
 ### Logging
 - Use `Logger.info()`, `Logger.warning()`, `Logger.error()`
-- Enable file logging via `Constants.DEBUG_LOG_TO_FILE`
+- Enable file logging with `-l` flag (writes to `llm-proxy.log`)
+- Enable verbose output with `-v` flag
 - Never use `System.out`/`System.err` directly (except in Logger)
 
 ## Dependencies
@@ -135,22 +136,22 @@ Current dependencies (do not add without justification):
 
 ```
 src/main/java/          - Java source files
-examples/config.toml    - Example configuration
-config.toml            - Runtime configuration (user-created)
+examples/config.toml    - Example configuration reference
+llm-proxy.toml          - Runtime configuration (user-created)
 target/                 - Build output
-pom.xml                - Maven configuration
+pom.xml                 - Maven configuration
 ```
 
 ## Common Tasks
 
 ### Add a new server configuration
-Edit `config.toml` (see `examples/config.toml` for schema)
+Edit `llm-proxy.toml` (see `examples/config.toml` for schema)
 
 ### Change port or timeouts
-Modify `Constants.java` (requires recompile)
+Pass via command line: `./run.sh -p 8080 -t 5s -r 30m`
 
 ### Enable debug logging
-Set `Constants.DEBUG_REQUEST = true`
+Run with `-v` for verbose output, `-l` for file logging
 
 ### Add a new dependency
 Edit `pom.xml` `<dependencies>` section, then run `mvn compile`

@@ -32,6 +32,14 @@ public class ModelsManager {
 
     private ModelsManager() {}
 
+    /**
+     * Initializes the model manager with runtime configuration and settings.
+     * Performs an initial synchronous model fetch and starts periodic background refresh.
+     *
+     * @param runtime the runtime configuration containing server definitions
+     * @param proxySettings the proxy settings for timeouts and refresh intervals
+     * @return true if initialization succeeded
+     */
     public static boolean initialize(RuntimeConfig runtime, ProxySettings proxySettings) {
         runtimeConfig = runtime;
         settings = proxySettings;
@@ -46,6 +54,12 @@ public class ModelsManager {
         return true;
     }
 
+    /**
+     * Generates the OpenAI-compatible /v1/models response as JSON.
+     * Triggers an async refresh of the model registry before returning cached data.
+     *
+     * @return JSON string containing the list of registered models
+     */
     public static String generateModelsResponse() {
         refreshRegisteredModelsAsync();
 
@@ -63,6 +77,14 @@ public class ModelsManager {
         }
     }
 
+    /**
+     * Retrieves configuration for a specific model.
+     * If the model is not found in the registry, triggers a synchronous refresh
+     * and checks again (useful for newly added models).
+     *
+     * @param modelName the model identifier to look up
+     * @return the model configuration, or null if not found
+     */
     public static ModelConfig getModelConfig(String modelName) {
         ModelConfig config = registeredModels.get(modelName);
         if (config != null) {
@@ -77,6 +99,14 @@ public class ModelsManager {
         return registeredModels.get(modelName);
     }
 
+    /**
+     * Validates that a request path is compatible with the model's endpoint.
+     * Checks for mismatches where endpoint ends with /v1 but request path doesn't start with /v1.
+     *
+     * @param requestPath the incoming request path
+     * @param modelEndpoint the endpoint URL for the target model
+     * @return true if the endpoint is compatible with the request path
+     */
     public static boolean validateModelEndpoint(String requestPath, String modelEndpoint) {
         String v1Prefix = "/v1";
         if (!requestPath.startsWith(v1Prefix) && modelEndpoint.endsWith(v1Prefix)) {
@@ -85,6 +115,15 @@ public class ModelsManager {
         return true;
     }
 
+    /**
+     * Builds the final request path by stripping duplicate /v1 prefixes.
+     * When endpoint ends with /v1 and request path starts with /v1,
+     * removes the leading /v1 from the request path to avoid duplication.
+     *
+     * @param requestPath the original request path
+     * @param endpoint the target endpoint URL
+     * @return the adjusted request path
+     */
     public static String buildFinalRequestPath(String requestPath, String endpoint) {
         String v1Prefix = "/v1";
         if (endpoint.endsWith(v1Prefix) && requestPath.startsWith(v1Prefix)) {
@@ -178,8 +217,10 @@ public class ModelsManager {
             Logger.warning("Some model fetches did not complete in time", e);
         }
 
-        // Atomic update: putAll updates/adds entries, then remove stale entries
-        // This avoids a window where the map is empty (race condition)
+        // Atomic update strategy to prevent race conditions:
+        // 1. putAll() adds new models and updates existing ones while keeping old entries
+        // 2. retainAll() removes only stale entries that are no longer in the new set
+        // This ensures concurrent readers never see an empty or partially-updated registry
         registeredModels.putAll(temp);
         registeredModels.keySet().retainAll(temp.keySet());
         lastRefreshTime = Instant.now();
@@ -233,14 +274,19 @@ public class ModelsManager {
         return modelNames;
     }
 
+    /**
+     * Filters the models list based on allow-list rules.
+     * Hidden models (prefixed with *) are always added regardless of backend response.
+     * This allows exposing models that backends like Fireworks don't list in /v1/models.
+     */
     private static List<String> filterAllowedModels(List<String> models, List<String> allow) {
         if (allow == null || allow.isEmpty()) return models;
         
         Set<String> allowed = new HashSet<>();
         List<String> hidden = new ArrayList<>();
         
-        // Hidden models are prefixed with * and should be added regardless of whether they appear in the models list.
-        // Example: "*accounts/fireworks/routers/kimi-k2p5-turbo" is a hidden model for Fireworks' "Fire Pass" plan.
+        // Hidden models are prefixed with * and bypass the backend's model list.
+        // Example: "*accounts/fireworks/routers/kimi-k2p5-turbo" for Fireworks Fire Pass models
         for (String a : allow) {
             if (a.startsWith("*")) {
                 if (a.length() > 1) hidden.add(a.substring(1));

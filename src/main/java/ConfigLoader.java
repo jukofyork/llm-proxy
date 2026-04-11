@@ -37,6 +37,14 @@ public class ConfigLoader {
 
     private static final ObjectMapper TOML = new ObjectMapper(new TomlFactory());
 
+    /**
+     * Loads and compiles TOML configuration from the specified file path.
+     * Parses the TOML file, validates the structure, and compiles it into
+     * a RuntimeConfig with resolved profiles and merged settings.
+     *
+     * @param tomlPath path to the TOML configuration file
+     * @return compiled RuntimeConfig, or null if loading/parsing fails
+     */
     public static RuntimeConfig load(String tomlPath) {
         try {
             String content = Files.readString(Path.of(tomlPath), StandardCharsets.UTF_8);
@@ -94,7 +102,8 @@ public class ConfigLoader {
             String defaultSystemMessage = getText(serverObj, "default_system_message");
             String defaultDeveloperMessage = getText(serverObj, "default_developer_message");
 
-            // Profiles: any nested object fields that are not recognized server-level keys
+            // Profiles are defined as nested tables in TOML: [ServerName.profileSuffix]
+            // We detect profiles by finding object fields that are not reserved server-level keys
             Map<String, RuntimeConfig.CompiledProfile> profiles = new HashMap<>();
             Set<String> reserved = Set.of(
                 "endpoint",
@@ -195,10 +204,14 @@ public class ConfigLoader {
         return List.copyOf(out);
     }
 
+    /**
+     * Converts a field path to JSON Pointer format.
+     * Supports both JSON Pointer (/temperature) and dot-notation (temperature or stream_options.include_usage).
+     */
     private static String toPointer(String s) {
         if (s == null || s.isEmpty()) return "/";
-        if (s.startsWith("/")) return s;
-        // support dot-path "a.b.c" and simple "temperature"
+        if (s.startsWith("/")) return s; // Already a JSON Pointer
+        // Convert dot-path "stream_options.include_usage" to "/stream_options/include_usage"
         String[] parts = s.split("\\.");
         StringBuilder sb = new StringBuilder();
         for (String p : parts) {

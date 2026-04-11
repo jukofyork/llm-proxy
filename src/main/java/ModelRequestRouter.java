@@ -16,11 +16,28 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
     private final RouteResolver resolver;
     private final ProxySettings settings;
 
+    /**
+     * Creates a new model request router.
+     *
+     * @param runtime the runtime configuration containing server and profile definitions
+     * @param settings the proxy settings for logging and other behaviors
+     */
     public ModelRequestRouter(RuntimeConfig runtime, ProxySettings settings) {
         this.resolver = new RouteResolver(runtime);
         this.settings = settings;
     }
 
+    /**
+     * Routes an incoming request to the appropriate backend server.
+     * Extracts the model name, resolves routing details, applies transformations
+     * (deny, defaults, overrides, message upserts), and returns proxy target.
+     *
+     * @param method the HTTP method (GET, POST, etc.)
+     * @param requestPath the request path (e.g., /v1/chat/completions)
+     * @param requestBody the JSON request body
+     * @param headers the HTTP headers
+     * @return proxy target with resolved endpoint and transformed body, or null if routing fails
+     */
     @Override
     public HttpProxy.ProxyTarget route(String method, String requestPath, String requestBody, Map<String, String> headers) {
         String modelName = extractRequestedModelName(requestPath, requestBody, headers);
@@ -104,6 +121,11 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
         }
     }
 
+    /**
+     * Inserts default system/developer messages if missing from the chat payload.
+     * System message is inserted at position 0 if not present.
+     * Developer message is inserted after the first system message (or at 0 if none).
+     */
     private void upsertRoleDefaults(ObjectNode objectNode, String defaultSystem, String defaultDeveloper) {
         JsonNode msgsNode = objectNode.get("messages");
         if (msgsNode == null || !msgsNode.isArray()) {
@@ -112,7 +134,7 @@ public class ModelRequestRouter implements HttpProxy.RequestRouter {
 
         ArrayNode messages = (ArrayNode) msgsNode;
 
-        // Detect existing roles
+        // Scan for existing system and developer roles to avoid duplicates
         int firstSystemIdx = -1;
         boolean hasDeveloper = false;
         for (int i = 0; i < messages.size(); i++) {

@@ -28,10 +28,8 @@ public final class Logger {
         }
     }
 
-    /**
-     * Private constructor to prevent instantiation of the class.
-     */
     private Logger() {
+        // Utility class
     }
 
     /**

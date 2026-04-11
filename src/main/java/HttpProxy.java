@@ -162,7 +162,8 @@ public class HttpProxy implements HttpHandler {
     }
 
     /**
-     * Checks if an exception indicates a client disconnect.
+     * Detects if an exception indicates the client disconnected.
+     * Uses platform-specific error message strings to identify disconnects.
      *
      * @param e The exception to check
      * @return true if the exception indicates a client disconnect
@@ -178,9 +179,10 @@ public class HttpProxy implements HttpHandler {
             String message = e.getMessage();
             if (message != null) {
                 String lower = message.toLowerCase();
-                return lower.contains("broken pipe") ||
-                       lower.contains("connection reset") ||
-                       lower.contains("connection abort");
+                // These strings are platform-specific error messages indicating client disconnect
+                return lower.contains("broken pipe") ||           // Linux/Unix
+                       lower.contains("connection reset") ||       // Windows
+                       lower.contains("connection abort");         // macOS/Other
             }
         }
         return false;

@@ -8,6 +8,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public class RuntimeConfig {
 
+    /**
+     * Compiled profile configuration for virtual models.
+     * Contains merged settings for a specific profile suffix.
+     */
     public static final class CompiledProfile {
         public final String suffix;
         public final ObjectNode defaults;   // applied if missing
@@ -33,6 +37,10 @@ public class RuntimeConfig {
         }
     }
 
+    /**
+     * Compiled server configuration with resolved profiles and merged settings.
+     * Immutable runtime representation of a server definition.
+     */
     public static final class CompiledServer {
         public final String name;
         public final String endpoint;
